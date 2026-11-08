@@ -1,11 +1,12 @@
 # Status
 
-The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six phases done).
+The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six phases done). The harness from `docs/HARNESS.md` is being built, following `docs/PLAN_HARNESS.md` (Phase 1 done).
 
 ## What's built
 
 - `backend/`: FastAPI and SQLite. The database (`backend/undercover.db`, or the file in `UNDERCOVER_DB`) is seeded from `data/` on first start, leaving out `data/evals/` and `data/security/`.
   - Read: `list_claims`, `get_claim`, `get_policy`, `get_claim_history` (earlier claims only, no personal details), `get_policy_wording`, `get_instructions`, `list_handlers`, `list_steps`
+  - Documents: `list_sections`, `read_section` and `search_documents` look up the numbered sections of the policy wording and the claims manual (`backend/documents.py`)
   - Write: `add_step`, `record_decision`, `pay_claim`, `sign_off`, `run_agent`, `run_queue`
   - Claim states: `waiting`, `in_progress`, `awaiting_sign_off`, `decided`. Approving a payout over $1,000 moves a claim to `awaiting_sign_off`, and `pay_claim` refuses it until a handler signs off. Signing off pays the claim.
   - `run_agent` and `run_queue` run the agent in a background task. A run that ends without a decision puts the claim back to `waiting` with an error step.

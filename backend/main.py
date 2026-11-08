@@ -13,7 +13,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from agent import main as agent
-from backend import db
+from backend import db, documents
 
 INSTRUCTIONS = Path(__file__).resolve().parent / "instructions.md"
 
@@ -136,6 +136,42 @@ def get_policy_wording() -> dict[str, str]:
         text = record(connection, "settings", "policy_wording")
         company = record(connection, "settings", "company")
     return {"version": company["policy_wording_version"], "text": text}
+
+
+def document_text(connection: sqlite3.Connection, document: str) -> str:
+    if document not in documents.DOCUMENTS:
+        raise HTTPException(404, f"There is no document {document}.")
+    return record(connection, "settings", document)
+
+
+@app.get("/api/documents/{document}/sections", operation_id="list_sections")
+def list_sections(document: str) -> dict[str, Any]:
+    """List the numbered sections of the policy wording or the claims manual."""
+    with db.connect() as connection:
+        return documents.contents(document_text(connection, document))
+
+
+@app.get("/api/documents/{document}/sections/{section}", operation_id="read_section")
+def read_section(document: str, section: str) -> dict[str, str]:
+    """Read one section of the policy wording or the claims manual."""
+    with db.connect() as connection:
+        found = documents.find(document_text(connection, document), section)
+    if found is None:
+        raise HTTPException(404, f"There is no section {section} in {document}.")
+    return {"document": document} | found
+
+
+@app.get("/api/search/{text}", operation_id="search_documents")
+def search_documents(text: str) -> list[dict[str, str]]:
+    """Find the sections of the wording and the manual that mention a phrase."""
+    with db.connect() as connection:
+        return [
+            match
+            for document in documents.DOCUMENTS
+            for match in documents.search(
+                document, document_text(connection, document), text
+            )
+        ]
 
 
 @app.get("/api/instructions", operation_id="get_instructions")

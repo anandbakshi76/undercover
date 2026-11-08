@@ -80,8 +80,9 @@ def seed(connection: sqlite3.Connection) -> None:
     ]
     rows.append(("settings", "plans", json.dumps(load("plans.json"))))
     rows.append(("settings", "company", json.dumps(load("company.json"))))
-    wording = (DATA / "policy_wording.md").read_text(encoding="utf-8")
-    rows.append(("settings", "policy_wording", json.dumps(wording)))
+    for document in ["policy_wording", "claims_manual"]:
+        text = (DATA / f"{document}.md").read_text(encoding="utf-8")
+        rows.append(("settings", document, json.dumps(text)))
     connection.executemany("INSERT INTO records VALUES (?, ?, ?)", rows)
     connection.executemany(
         "INSERT INTO claims (claim_id, status, data) VALUES (?, 'waiting', ?)",
