@@ -1,6 +1,6 @@
 # Status
 
-The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six phases done). The harness from `docs/HARNESS.md` is being built, following `docs/PLAN_HARNESS.md` (Phases 1 to 5 done). The database schema changed in Phase 2: run `uv run -m backend.db --reset` once.
+The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six phases done). The harness from `docs/HARNESS.md` is built on top of it, following `docs/PLAN_HARNESS.md` (all six phases done). The harness changed the database schema, so a database from the pilot needs `uv run -m backend.db --reset` once.
 
 ## What's built
 
@@ -20,16 +20,18 @@ The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six
   - `#/`: the queue, with a count for each state, a Claims to work box (starting at 5) and a Run the queue button, and the latest run's to-do list, progress and summary, refreshed while the run is running
   - `#/claims/<id>`: the claim, its policy, the decision with its reason and section, the payment, a Run agent button, what the agent read, the agent's steps as it works, and sign-off by a handler for payouts over $1,000
   - `#/instructions`: the agent's instructions for running the queue and for working a claim, read only
-- `e2e/`: Playwright tests of the queue, the steps and decision on a claim, sign-off of a payout over $1,000, the instructions, and dark mode. They run their own backend (port 8001, `e2e/test.db`, rebuilt each run) and dashboard (port 5174), and stand in for the agent through the API, so they never call a model.
+- `e2e/`: Playwright tests of the queue, the steps and decision on a claim, sign-off of a payout over $1,000, dark mode (`pilot.spec.ts`), and the sections read, a claim that needs a handler, a run's to-do list being ticked off, and both sets of instructions (`harness.spec.ts`). They run their own backend (port 8001, `e2e/test.db`, rebuilt each run) and dashboard (port 5174), and stand in for the agent through the API, so they never call a model.
 
 ## Running it
 
 - `npm run dev` starts the backend on port 8000 and the dashboard on http://localhost:5173
-- Open a claim and press Run agent, or press Run the queue. Each run calls the model in `MODEL_NAME`, or GPT-6 Luna by default; `MODEL_NAME=openrouter/free` in `.env` is free
+- Set Claims to work and press Run the queue, or open a claim and press Run agent. Each run calls the model in `MODEL_NAME`, or DeepSeek V4.1 Flash by default; `MODEL_NAME=openrouter/free` in `.env` is free. For trials, reseed first and keep the cap at 5
+- From the command line, with the backend running: `uv run -m agent --limit 5` or `uv run -m agent --claim CLM-1001`
 - `uv run -m backend.db --reset` rebuilds the database from `data/`
 - `npm run check` runs every check
 
 ## Notes
 
-- Not used in the pilot, as the spec says: the claims manual. Also unused: `policy_wording_short.md`, `knowledge.json` and `security/`.
-- The agent's accuracy hasn't been measured against `data/evals/`. In the live checks it approved and paid CLM-1001 ($420.00) and CLM-1002 ($580.00), declined CLM-1013 (under the 12-hour waiting period), referred CLM-1010 (whether the alcohol exclusion applies) and approved CLM-1008 ($2,240.00), which waited for sign-off.
+- Unused: `policy_wording_short.md`, `knowledge.json` and `security/`.
+- The agent's accuracy hasn't been measured against `data/evals/`. In the harness's live run (DeepSeek V4.1 Flash, capped at 5, after a reseed) the queue agent chose the five oldest claims, wrote and ticked off its to-do list, and left the other 20 waiting. It approved and paid CLM-1001 ($420.00), approved CLM-1008 ($2,240.00) and CLM-1011 ($1,150.00), which wait for sign-off, referred CLM-1018 (no proof of value for a $420 jacket, manual section 5) and declined CLM-1010 (treatment while intoxicated, wording section 9). Each claim agent read 10 to 14 sections; nothing failed or went back to the queue.
+- Stopping `npm run dev` from a tool on Windows can leave uvicorn and vite running; stop the whole process tree (`taskkill /PID <npm pid> /T /F`).

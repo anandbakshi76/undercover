@@ -82,13 +82,6 @@ test("a payout over $1,000 waits for a handler's sign-off", async ({
   await expect(page.locator(".actions .badge")).toHaveText("Decided");
 });
 
-test("the agent's instructions are read only", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("link", { name: "Agent instructions" }).click();
-  await expect(page.getByText("You are the UnderCover Agent.")).toBeVisible();
-  await expect(page.getByRole("textbox")).toHaveCount(0);
-});
-
 test("dark mode switches the colors and is remembered", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");

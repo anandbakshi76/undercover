@@ -197,8 +197,8 @@ One new state, for a claim the agent couldn't finish:
 
 **Success criteria**
 
-- [ ] `npm run e2e` passes all specs
-- [ ] Live run on the default model: `uv run -m backend.db --reset`, `npm run dev`, then Run the queue with 5. The to-do list fills in and is ticked off, five claims are worked, each claim's steps include the sections read, and the other 20 stay Waiting
-- [ ] Playwright MCP: the same run watched in the browser, including one claim's "What the agent read" panel
-- [ ] `docs/SPEC.md`, `docs/TECH_STACK.md` and `docs/STATUS.md` describe the product as it now is
-- [ ] `npm run check` passes: ruff, pyright, pytest at 80% or more, Prettier, ESLint, tsc, vitest at 80% or more, and Playwright
+- [x] `npm run e2e` passes all specs
+- [x] Live run on the default model: `uv run -m backend.db --reset`, `npm run dev`, then Run the queue with 5. The to-do list fills in and is ticked off, five claims are worked, each claim's steps include the sections read, and the other 20 stay Waiting
+- [x] Playwright MCP: the same run watched in the browser, including one claim's "What the agent read" panel
+- [x] `docs/SPEC.md`, `docs/TECH_STACK.md` and `docs/STATUS.md` describe the product as it now is
+- [x] `npm run check` passes: ruff, pyright, pytest at 80% or more, Prettier, ESLint, tsc, vitest at 80% or more, and Playwright
