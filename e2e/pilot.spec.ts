@@ -45,7 +45,7 @@ test("the agent's steps and decision show on the claim", async ({
     ),
   ).toBeVisible();
   await expect(
-    page.getByText("Policy wording: Section 7, Emergency Medical"),
+    page.getByText("Based on: Section 7, Emergency Medical"),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Run agent" })).toBeHidden();
 });

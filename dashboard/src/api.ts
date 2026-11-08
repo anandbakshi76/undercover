@@ -1,5 +1,5 @@
 export type ClaimStatus =
-  "waiting" | "in_progress" | "awaiting_sign_off" | "decided";
+  "waiting" | "in_progress" | "awaiting_sign_off" | "decided" | "needs_handler";
 
 export type DecisionKind = "approve" | "decline" | "refer";
 
@@ -48,6 +48,7 @@ export interface ClaimDetail extends ClaimBase {
   decision: Decision | null;
   sign_off: { handler_id: string; signed_off_at: string } | null;
   payment: { amount: number; paid_at: string } | null;
+  attempts: number;
 }
 
 export interface Policy {
@@ -67,9 +68,37 @@ export interface Policy {
 
 export interface Step {
   id: number;
-  kind: "tool_call" | "tool_result" | "reply" | "error";
+  kind: "tool_call" | "tool_result" | "section" | "reply" | "error";
   text: string;
   created_at: string;
+}
+
+export type TodoStatus = "to_do" | "in_progress" | "done" | "left_for_handler";
+
+export interface Todo {
+  content: string;
+  status: TodoStatus;
+}
+
+export type RunStatus = "running" | "finished" | "failed";
+
+export interface Run {
+  run_id: string;
+  kind: "queue" | "claim";
+  claim_limit: number;
+  status: RunStatus;
+  todos: Todo[];
+  summary: string | null;
+  started_at: string;
+  finished_at: string | null;
+  claims_worked: string[];
+  claims_left: number;
+  waiting_in_reach: string[];
+}
+
+export interface Instructions {
+  queue: string;
+  claim: string;
 }
 
 export interface Handler {
@@ -111,11 +140,12 @@ export const api = {
   claim: (claimId: string) => request<ClaimDetail>(`/api/claims/${claimId}`),
   policy: (policyId: string) => request<Policy>(`/api/policies/${policyId}`),
   steps: (claimId: string) => request<Step[]>(`/api/claims/${claimId}/steps`),
-  instructions: () => request<{ text: string }>("/api/instructions"),
+  instructions: () => request<Instructions>("/api/instructions"),
+  latestRun: () => request<Run | null>("/api/queue/latest-run"),
   handlers: () => request<Handler[]>("/api/handlers"),
   runAgent: (claimId: string) =>
     post<{ status: string }>(`/api/claims/${claimId}/run`),
-  runQueue: () => post<{ waiting: number }>("/api/queue/run"),
+  runQueue: (limit: number) => post<Run>("/api/queue/run", { limit }),
   signOff: (claimId: string, handlerId: string) =>
     post<ClaimDetail>(`/api/claims/${claimId}/sign-off`, {
       handler_id: handlerId,

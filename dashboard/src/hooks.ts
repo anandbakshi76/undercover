@@ -68,9 +68,12 @@ export function useLoad<T>(
     );
   }, [load]);
 
-  const poll = shouldPoll(data);
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  const poll = shouldPoll(data);
+  useEffect(() => {
     if (!poll) return;
     const timer = setInterval(refresh, POLL_MS);
     return () => {

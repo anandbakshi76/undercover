@@ -107,7 +107,7 @@ it("shows a decided claim with its decision", async () => {
   expect(screen.getByText("$0.00")).toBeDefined();
   expect(screen.getByText("Lost through being left unattended.")).toBeDefined();
   expect(
-    screen.getByText("Policy wording: Section 5, Baggage and Personal Effects"),
+    screen.getByText("Based on: Section 5, Baggage and Personal Effects"),
   ).toBeDefined();
   expect(screen.queryByRole("button", { name: "Run agent" })).toBeNull();
   expect(screen.queryByRole("combobox")).toBeNull();
@@ -218,4 +218,59 @@ it("keeps following the agent after it decides, until it replies", async () => {
   await act(() => vi.advanceTimersByTimeAsync(POLL_MS));
   expect(screen.getByText("Approved and paid.")).toBeDefined();
   expect(screen.queryByText("Working...")).toBeNull();
+});
+
+it("lists the sections the agent read, once each and in order", async () => {
+  mockApi(
+    routes({
+      "GET /api/claims/CLM-1001/steps": [
+        step(1, { kind: "section", text: "Policy wording 3. Trip Delay" }),
+        step(2, {
+          kind: "section",
+          text: "Claims manual 10. Meals without receipts",
+        }),
+        step(3, { kind: "section", text: "Policy wording 3. Trip Delay" }),
+        step(4, { kind: "reply", text: "Approved." }),
+      ],
+    }),
+  );
+  render(<ClaimPage claimId="CLM-1001" />);
+  const read = await screen.findByRole("list", { name: "Sections read" });
+  expect(
+    within(read)
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toEqual([
+    "Policy wording 3. Trip Delay",
+    "Claims manual 10. Meals without receipts",
+  ]);
+  const steps = screen.getByRole("list", { name: "Agent steps" });
+  expect(within(steps).getAllByText("Read")).toHaveLength(3);
+});
+
+it("says when the agent has read nothing yet", async () => {
+  mockApi(routes());
+  render(<ClaimPage claimId="CLM-1001" />);
+  expect(
+    await screen.findByText("The agent has not read any sections yet."),
+  ).toBeDefined();
+});
+
+it("shows a claim left for a handler, with no Run agent button", async () => {
+  mockApi(
+    routes({
+      "GET /api/claims/CLM-1001": claim({
+        status: "needs_handler",
+        attempts: 2,
+      }),
+    }),
+  );
+  render(<ClaimPage claimId="CLM-1001" />);
+  expect(
+    await screen.findByText(
+      "The agent could not decide this claim after two attempts. It is left for a handler.",
+    ),
+  ).toBeDefined();
+  expect(screen.getAllByText("Needs a handler").length).toBeGreaterThan(0);
+  expect(screen.queryByRole("button", { name: "Run agent" })).toBeNull();
 });

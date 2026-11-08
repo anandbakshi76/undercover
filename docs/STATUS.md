@@ -1,6 +1,6 @@
 # Status
 
-The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six phases done). The harness from `docs/HARNESS.md` is being built, following `docs/PLAN_HARNESS.md` (Phases 1 to 4 done). The database schema changed in Phase 2: run `uv run -m backend.db --reset` once.
+The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six phases done). The harness from `docs/HARNESS.md` is being built, following `docs/PLAN_HARNESS.md` (Phases 1 to 5 done). The database schema changed in Phase 2: run `uv run -m backend.db --reset` once.
 
 ## What's built
 
@@ -17,9 +17,9 @@ The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six
   - `agent/queue_agent.py`: the queue agent. `run_queue(run_id)` plans the run with `write_todos`, finds claims with `list_waiting_claims` and hands each to a claim agent with `work_claim`, one at a time. A middleware check sends it back when it tries to finish with waiting claims still within its cap (up to 3 times). Its final reply is the run's summary; if it fails, the run is marked `failed`.
   - `uv run -m agent --limit 5` runs the queue on five claims, and `uv run -m agent --claim CLM-1001` works one claim, against a running backend.
 - `dashboard/`: React, Vite and TypeScript in the UnderCover brand. It starts in the system's light or dark setting, and the Dark mode button in the header switches it and remembers the choice in the browser.
-  - `#/`: the queue, with a count for each state and a Run the queue button
-  - `#/claims/<id>`: the claim, its policy, the decision with its reason and section, the payment, a Run agent button, the agent's steps as it works, and sign-off by a handler for payouts over $1,000
-  - `#/instructions`: the agent's instructions, read only
+  - `#/`: the queue, with a count for each state, a Claims to work box (starting at 5) and a Run the queue button, and the latest run's to-do list, progress and summary, refreshed while the run is running
+  - `#/claims/<id>`: the claim, its policy, the decision with its reason and section, the payment, a Run agent button, what the agent read, the agent's steps as it works, and sign-off by a handler for payouts over $1,000
+  - `#/instructions`: the agent's instructions for running the queue and for working a claim, read only
 - `e2e/`: Playwright tests of the queue, the steps and decision on a claim, sign-off of a payout over $1,000, the instructions, and dark mode. They run their own backend (port 8001, `e2e/test.db`, rebuilt each run) and dashboard (port 5174), and stand in for the agent through the API, so they never call a model.
 
 ## Running it

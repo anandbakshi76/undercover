@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Instructions } from "./Instructions";
 import { Failure, mockApi } from "./testing";
@@ -8,14 +8,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("shows the instructions read only", async () => {
+it("shows both sets of instructions read only", async () => {
   mockApi({
-    "GET /api/instructions": { text: "You are the UnderCover Agent." },
+    "GET /api/instructions": {
+      queue: "Plan the run as a to-do list.",
+      claim: "Decide one claim.",
+    },
   });
   render(<Instructions />);
+  const queue = await screen.findByRole("region", {
+    name: "Running the queue",
+  });
   expect(
-    await screen.findByText("You are the UnderCover Agent."),
+    within(queue).getByText("Plan the run as a to-do list."),
   ).toBeDefined();
+  const claim = screen.getByRole("region", { name: "Working a claim" });
+  expect(within(claim).getByText("Decide one claim.")).toBeDefined();
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("button")).toBeNull();
 });

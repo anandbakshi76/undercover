@@ -33,7 +33,10 @@ describe("parseRoute", () => {
 
 describe("App", () => {
   it("shows the queue by default", async () => {
-    mockApi({ "GET /api/claims": [summary()] });
+    mockApi({
+      "GET /api/claims": [summary()],
+      "GET /api/queue/latest-run": null,
+    });
     render(<App />);
     expect(
       await screen.findByRole("heading", { name: "Claims queue" }),
@@ -41,7 +44,12 @@ describe("App", () => {
   });
 
   it("shows the instructions page", async () => {
-    mockApi({ "GET /api/instructions": { text: "Decide claims." } });
+    mockApi({
+      "GET /api/instructions": {
+        queue: "Run the queue.",
+        claim: "Decide claims.",
+      },
+    });
     window.location.hash = "#/instructions";
     render(<App />);
     expect(await screen.findByText("Decide claims.")).toBeDefined();
@@ -50,6 +58,7 @@ describe("App", () => {
   it("shows a claim page and follows the hash", async () => {
     mockApi({
       "GET /api/claims": [summary()],
+      "GET /api/queue/latest-run": null,
       "GET /api/claims/CLM-1001": claim(),
       "GET /api/claims/CLM-1001/steps": [],
       "GET /api/policies/POL-2001": policy,
@@ -69,7 +78,10 @@ describe("App", () => {
 
 describe("dark mode", () => {
   it("starts in the theme set on the page", async () => {
-    mockApi({ "GET /api/claims": [summary()] });
+    mockApi({
+      "GET /api/claims": [summary()],
+      "GET /api/queue/latest-run": null,
+    });
     document.documentElement.dataset.theme = "dark";
     render(<App />);
     const toggle = await screen.findByRole("button", { name: "Dark mode" });
@@ -77,7 +89,10 @@ describe("dark mode", () => {
   });
 
   it("switches between light and dark and remembers the choice", async () => {
-    mockApi({ "GET /api/claims": [summary()] });
+    mockApi({
+      "GET /api/claims": [summary()],
+      "GET /api/queue/latest-run": null,
+    });
     render(<App />);
     const toggle = await screen.findByRole("button", { name: "Dark mode" });
     expect(toggle.getAttribute("aria-pressed")).toBe("false");

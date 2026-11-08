@@ -1,5 +1,12 @@
 import { vi } from "vitest";
-import type { ClaimDetail, ClaimSummary, Handler, Policy, Step } from "./api";
+import type {
+  ClaimDetail,
+  ClaimSummary,
+  Handler,
+  Policy,
+  Run,
+  Step,
+} from "./api";
 
 export class Failure {
   constructor(
@@ -95,6 +102,7 @@ export function claim(overrides: Partial<ClaimDetail> = {}): ClaimDetail {
     decision: null,
     sign_off: null,
     payment: null,
+    attempts: 0,
     ...overrides,
   };
 }
@@ -129,6 +137,23 @@ export function step(id: number, overrides: Partial<Step> = {}): Step {
     kind: "tool_call",
     text: `get_claim({"claim_id": "CLM-1001"}) ${String(id)}`,
     created_at: "2026-10-28T10:00:00+00:00",
+    ...overrides,
+  };
+}
+
+export function run(overrides: Partial<Run> = {}): Run {
+  return {
+    run_id: "RUN-0001",
+    kind: "queue",
+    claim_limit: 5,
+    status: "running",
+    todos: [],
+    summary: null,
+    started_at: "2026-11-08T10:00:00+00:00",
+    finished_at: null,
+    claims_worked: [],
+    claims_left: 5,
+    waiting_in_reach: [],
     ...overrides,
   };
 }

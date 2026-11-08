@@ -13,6 +13,7 @@ import { useAction, useLoad } from "./hooks";
 const STEP_LABELS: Record<Step["kind"], string> = {
   tool_call: "Called",
   tool_result: "Result",
+  section: "Read",
   reply: "Reply",
   error: "Error",
 };
@@ -188,6 +189,37 @@ function Payment({
   ) : null;
 }
 
+function undecided(claim: ClaimDetail): string {
+  if (claim.status === "in_progress")
+    return "The agent is working on this claim.";
+  if (claim.status === "needs_handler") {
+    return "The agent could not decide this claim after two attempts. It is left for a handler.";
+  }
+  return "No decision yet.";
+}
+
+function SectionsRead({ steps }: Readonly<{ steps: Step[] }>) {
+  const read = [
+    ...new Set(
+      steps.filter((step) => step.kind === "section").map((step) => step.text),
+    ),
+  ];
+  return (
+    <section className="panel">
+      <h2>What the agent read</h2>
+      {read.length === 0 ? (
+        <p className="note">The agent has not read any sections yet.</p>
+      ) : (
+        <ul className="sections-read" aria-label="Sections read">
+          {read.map((section) => (
+            <li key={section}>{section}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function DecisionPanel({
   claim,
   handlers,
@@ -202,11 +234,7 @@ function DecisionPanel({
     return (
       <section className="panel">
         <h2>Decision</h2>
-        <p className="note">
-          {claim.status === "in_progress"
-            ? "The agent is working on this claim."
-            : "No decision yet."}
-        </p>
+        <p className="note">{undecided(claim)}</p>
       </section>
     );
   }
@@ -220,7 +248,7 @@ function DecisionPanel({
         <span className="mono payout">{money(decision.payout)}</span>
       </p>
       <p>{decision.reason}</p>
-      <p className="note">Policy wording: {decision.policy_section}</p>
+      <p className="note">Based on: {decision.policy_section}</p>
       <Payment claim={claim} handlers={handlers} />
       {claim.status === "awaiting_sign_off" && (
         <SignOffForm
@@ -329,6 +357,7 @@ export function ClaimPage({ claimId }: Readonly<{ claimId: string }>) {
             handlers={handlers ?? []}
             onChange={refresh}
           />
+          <SectionsRead steps={steps} />
           <Steps steps={steps} working={working(claim, steps)} />
           <PolicyFacts policy={policy} />
         </div>

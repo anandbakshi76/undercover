@@ -175,14 +175,14 @@ One new state, for a claim the agent couldn't finish:
 
 **Success criteria**
 
-- [ ] vitest: the queue page shows the latest run's to-do list with each item's state label, and the summary once it's finished
-- [ ] vitest: Run the queue sends the number from the box; the box starts at 5
-- [ ] vitest: a running run turns on refreshing, and new to-do states appear on the next refresh
-- [ ] vitest: the state counts include Needs a handler
-- [ ] vitest: the claim page lists the sections read, and a `needs_handler` claim shows no Run agent button
-- [ ] vitest: the instructions page shows both sets, with no editing controls
-- [ ] Playwright MCP: the queue page with a to-do list (posted through the API) in light and dark mode, with no horizontal scroll at phone width
-- [ ] `npm run check:ts` passes with coverage of 80% or more
+- [x] vitest: the queue page shows the latest run's to-do list with each item's state label, and the summary once it's finished
+- [x] vitest: Run the queue sends the number from the box; the box starts at 5
+- [x] vitest: a running run turns on refreshing, and new to-do states appear on the next refresh
+- [x] vitest: the state counts include Needs a handler
+- [x] vitest: the claim page lists the sections read, and a `needs_handler` claim shows no Run agent button
+- [x] vitest: the instructions page shows both sets, with no editing controls
+- [x] Playwright MCP: the queue page with a to-do list (posted through the API) in light and dark mode, with no horizontal scroll at phone width
+- [x] `npm run check:ts` passes with coverage of 80% or more
 
 ## Phase 6: End to end, a live run and the handover
 

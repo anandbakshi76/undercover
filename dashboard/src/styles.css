@@ -239,6 +239,12 @@ select {
   color: var(--midnight);
 }
 
+.dot-needs_handler,
+.badge-needs_handler {
+  background: var(--raspberry);
+  color: #ffffff;
+}
+
 .badge {
   display: inline-block;
   border-radius: 999px;
@@ -461,4 +467,106 @@ td .mono,
   .claim-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.run-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.run-form label {
+  font-weight: 600;
+}
+
+.run-form input {
+  font: inherit;
+  font-family: var(--mono);
+  width: 5rem;
+  color: var(--ink);
+  background: var(--panel);
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.run {
+  margin-bottom: 16px;
+}
+
+.run-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+}
+
+.run-running,
+.todo-in_progress {
+  background: var(--marigold);
+  color: var(--midnight);
+}
+
+.run-finished,
+.todo-done {
+  background: var(--sea-green);
+  color: var(--midnight);
+}
+
+.run-failed,
+.todo-left_for_handler {
+  background: var(--raspberry);
+  color: #ffffff;
+}
+
+.todo-to_do {
+  background: var(--cerulean);
+  color: #ffffff;
+}
+
+.todos {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.todo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--subtle);
+  overflow-wrap: anywhere;
+}
+
+.summary {
+  margin-top: 16px;
+}
+
+.summary h3 {
+  font-size: 0.95rem;
+}
+
+.summary p {
+  margin: 4px 0 0;
+  font-family: var(--serif);
+  font-size: 1.15rem;
+}
+
+.sections-read {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.step-section {
+  background: var(--subtle);
+}
+
+.instructions-part + .instructions-part {
+  margin-top: 16px;
 }

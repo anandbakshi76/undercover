@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "./api";
 import { Badge } from "./Badge";
+import { RunPanel } from "./RunPanel";
 import {
   DECISION_LABELS,
   money,
@@ -10,47 +11,65 @@ import {
 } from "./format";
 import { useAction, useLoad } from "./hooks";
 
+export const DEFAULT_LIMIT = 5;
+
+async function loadQueue() {
+  const [claims, run] = await Promise.all([api.claims(), api.latestRun()]);
+  return { claims, run };
+}
+
 export function Queue() {
-  const [queueStarted, setQueueStarted] = useState(false);
-  const {
-    data: claims,
-    error,
-    refresh,
-  } = useLoad(api.claims, (loaded) =>
+  const [limit, setLimit] = useState(DEFAULT_LIMIT);
+  const { data, error, refresh } = useLoad(loadQueue, (loaded) =>
     Boolean(
-      loaded?.some(
-        (claim) =>
-          claim.status === "in_progress" ||
-          (queueStarted && claim.status === "waiting"),
-      ),
+      loaded?.run?.status === "running" ||
+      loaded?.claims.some((claim) => claim.status === "in_progress"),
     ),
   );
-  const run = useAction();
-  const waiting = claims?.some((claim) => claim.status === "waiting") ?? false;
-
-  const runQueue = () =>
-    run.act(async () => {
-      await api.runQueue();
-      setQueueStarted(true);
-      refresh();
-    });
+  const action = useAction();
 
   if (error) return <p role="alert">{error}</p>;
-  if (!claims) return <p>Loading the queue...</p>;
+  if (!data) return <p>Loading the queue...</p>;
+
+  const { claims, run } = data;
+  const waiting = claims.filter((claim) => claim.status === "waiting").length;
+  const running = run?.status === "running";
+  const runQueue = () =>
+    action.act(async () => {
+      await api.runQueue(limit);
+      refresh();
+    });
 
   return (
     <>
       <div className="page-head">
         <h1>Claims queue</h1>
-        <button
-          type="button"
-          onClick={() => void runQueue()}
-          disabled={!waiting || run.busy}
+        <form
+          className="run-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void runQueue();
+          }}
         >
-          Run the queue
-        </button>
+          <label htmlFor="limit">Claims to work</label>
+          <input
+            id="limit"
+            type="number"
+            min={1}
+            value={limit}
+            onChange={(event) => {
+              setLimit(Number(event.target.value));
+            }}
+          />
+          <button
+            type="submit"
+            disabled={!waiting || limit < 1 || running || action.busy}
+          >
+            Run the queue
+          </button>
+        </form>
       </div>
-      {run.error && <p role="alert">{run.error}</p>}
+      {action.error && <p role="alert">{action.error}</p>}
       <ul className="counts" aria-label="Claims by state">
         {STATUSES.map((status) => (
           <li key={status} className="panel count">
@@ -62,6 +81,7 @@ export function Queue() {
           </li>
         ))}
       </ul>
+      {run && <RunPanel run={run} />}
       <div className="panel table-panel">
         <table>
           <thead>
