@@ -25,6 +25,7 @@ def test_list_sections_of_the_manual(client):
 def test_read_one_section(client):
     section = client.get("/api/documents/claims_manual/sections/9").json()
     assert section["document"] == "claims_manual"
+    assert section["name"] == "Claims manual"
     assert section["title"] == "Repeat claims"
     assert "third claim within any 12 month period" in section["text"]
     assert "Meals without receipts" not in section["text"]

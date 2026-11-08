@@ -12,10 +12,10 @@ from uuid import uuid4
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from agent import main as agent
+from agent import claim as claim_agent
 from backend import db, documents
 
-INSTRUCTIONS = Path(__file__).resolve().parent / "instructions.md"
+INSTRUCTIONS = Path(__file__).resolve().parent / "instructions"
 
 
 @asynccontextmanager
@@ -71,6 +71,7 @@ def claim_view(row: sqlite3.Row) -> dict[str, Any]:
         "decision": decision,
         "sign_off": sign_off,
         "payment": payment,
+        "attempts": row["attempts"],
     }
 
 
@@ -130,15 +131,6 @@ def get_claim_history(customer_id: str) -> dict[str, Any]:
     }
 
 
-@app.get("/api/policy-wording", operation_id="get_policy_wording")
-def get_policy_wording() -> dict[str, str]:
-    """Get the policy wording that decisions must follow."""
-    with db.connect() as connection:
-        text = record(connection, "settings", "policy_wording")
-        company = record(connection, "settings", "company")
-    return {"version": company["policy_wording_version"], "text": text}
-
-
 def document_text(connection: sqlite3.Connection, document: str) -> str:
     if document not in documents.DOCUMENTS:
         raise HTTPException(404, f"There is no document {document}.")
@@ -159,7 +151,7 @@ def read_section(document: str, section: str) -> dict[str, str]:
         found = documents.find(document_text(connection, document), section)
     if found is None:
         raise HTTPException(404, f"There is no section {section} in {document}.")
-    return {"document": document} | found
+    return {"document": document, "name": documents.DOCUMENTS[document]} | found
 
 
 @app.get("/api/search/{text}", operation_id="search_documents")
@@ -177,8 +169,8 @@ def search_documents(text: str) -> list[dict[str, str]]:
 
 @app.get("/api/instructions", operation_id="get_instructions")
 def get_instructions() -> dict[str, str]:
-    """Get the UnderCover Agent's instructions."""
-    return {"text": INSTRUCTIONS.read_text(encoding="utf-8")}
+    """Get the UnderCover Agent's instructions for working a claim."""
+    return {"claim": (INSTRUCTIONS / "claim.md").read_text(encoding="utf-8")}
 
 
 @app.get("/api/handlers", operation_id="list_handlers")
@@ -192,7 +184,7 @@ def list_handlers() -> list[dict[str, Any]]:
 
 
 class Step(BaseModel):
-    kind: Literal["tool_call", "tool_result", "reply", "error"]
+    kind: Literal["tool_call", "tool_result", "section", "reply", "error"]
     text: str
 
 
@@ -560,18 +552,8 @@ def release_claim(claim_id: str, release_input: Release) -> dict[str, Any]:
         return claim_view(claim_row(connection, claim_id))
 
 
-def work(run_id: str, claim_id: str) -> None:
-    try:
-        agent.run(claim_id, f"{run_id}-{claim_id}")
-        problem = "The agent finished without recording a decision."
-    except Exception as error:
-        problem = f"The agent stopped with an error: {error}."
-    with db.connect() as connection:
-        release(connection, claim_id, problem)
-
-
 def work_one(run_id: str, claim_id: str) -> None:
-    work(run_id, claim_id)
+    claim_agent.work_started(run_id, claim_id)
     with db.connect() as connection:
         end_run(connection, run_id, RunEnd(status="finished", summary=""))
 
@@ -585,7 +567,7 @@ def work_queue(run_id: str) -> None:
                 start(connection, run_id, claim_id)
         except HTTPException:
             continue
-        work(run_id, claim_id)
+        claim_agent.work_started(run_id, claim_id)
     with db.connect() as connection:
         worked = len(worked_ids(connection, run_id))
         end_run(

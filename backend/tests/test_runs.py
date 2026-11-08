@@ -20,11 +20,11 @@ def decline(claim_id, thread_id):
 def runs(monkeypatch):
     seen = []
 
-    def fake_run(claim_id, thread_id):
-        seen.append((claim_id, thread_id))
-        decline(claim_id, thread_id)
+    def fake_work(run_id, claim_id):
+        seen.append((run_id, claim_id))
+        decline(claim_id, run_id)
 
-    monkeypatch.setattr(main.agent, "run", fake_run)
+    monkeypatch.setattr(main.claim_agent, "work_started", fake_work)
     return seen
 
 
@@ -200,7 +200,7 @@ def test_the_app_recovers_when_it_starts():
 def test_run_agent_decides_a_waiting_claim(client, runs):
     response = client.post("/api/claims/CLM-1001/run").json()
     assert response["status"] == "in_progress"
-    assert runs[0] == ("CLM-1001", f"{response['run_id']}-CLM-1001")
+    assert runs[0] == (response["run_id"], "CLM-1001")
     assert status(client, "CLM-1001") == "decided"
     run = client.get(f"/api/runs/{response['run_id']}").json()
     assert run["kind"] == "claim"
@@ -221,7 +221,7 @@ def test_run_agent_on_an_unknown_claim_is_404(client, runs):
 def test_run_queue_is_capped(client, runs):
     run = client.post("/api/queue/run", json={"limit": 3}).json()
     assert run["claim_limit"] == 3
-    assert [claim_id for claim_id, _ in runs] == ["CLM-1001", "CLM-1002", "CLM-1003"]
+    assert [claim_id for _, claim_id in runs] == ["CLM-1001", "CLM-1002", "CLM-1003"]
     statuses = [c["status"] for c in client.get("/api/claims").json()]
     assert statuses.count("decided") == 3
     assert statuses.count("waiting") == 22
@@ -233,26 +233,3 @@ def test_run_queue_is_capped(client, runs):
 def test_run_queue_needs_a_cap_of_at_least_one(client, runs):
     assert client.post("/api/queue/run", json={"limit": 0}).status_code == 422
     assert runs == []
-
-
-def test_a_run_without_a_decision_puts_the_claim_back(client, monkeypatch):
-    monkeypatch.setattr(main.agent, "run", lambda claim_id, thread_id: "Hello.")
-    client.post("/api/claims/CLM-1001/run")
-    assert status(client, "CLM-1001") == "waiting"
-    step = client.get("/api/claims/CLM-1001/steps").json()[-1]
-    assert step["kind"] == "error"
-    assert step["text"].startswith("The agent finished without recording a decision.")
-
-
-def test_an_error_before_the_decision_puts_the_claim_back(client, monkeypatch):
-    def fail(claim_id, thread_id):
-        raise RuntimeError("connection lost")
-
-    monkeypatch.setattr(main.agent, "run", fail)
-    client.post("/api/claims/CLM-1001/run")
-    assert status(client, "CLM-1001") == "waiting"
-    step = client.get("/api/claims/CLM-1001/steps").json()[-1]
-    assert step["text"] == (
-        "The agent stopped with an error: connection lost. "
-        "The claim is back in the queue."
-    )

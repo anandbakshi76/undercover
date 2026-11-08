@@ -46,7 +46,7 @@ One new state, for a claim the agent couldn't finish:
 10. **Steps are kept across attempts.** The pilot cleared a claim's steps when a run started. Now every attempt's steps stay on the claim, with an error step between attempts, so the record shows what went wrong the first time.
 11. **Two sets of instructions.** `backend/instructions/queue.md` covers running the queue and `backend/instructions/claim.md` covers working a claim. `get_instructions` returns both, and the instructions page shows them in two sections. The claim instructions follow the manual's order of work (section 4), say which sections to look up for what, and are written from the wording and the manual only, never from `data/evals/`.
 12. **The model.** `deepseek/deepseek-v4.1-flash` with low reasoning effort is the default. `MODEL_NAME` still overrides it. Both agents use the same model.
-13. **Starting a run.** On the queue page, "Run the queue" sits next to a number box, "Claims to work", which starts at 5. From the command line, `uv run -m agent.main --limit 5` starts a capped run against a running backend, and `uv run -m agent.main --claim CLM-1001` runs one claim.
+13. **Starting a run.** On the queue page, "Run the queue" sits next to a number box, "Claims to work", which starts at 5. From the command line, `uv run -m agent --limit 5` starts a capped run against a running backend, and `uv run -m agent --claim CLM-1001` runs one claim.
 14. **Not in this build:** a way for a handler to put a `needs_handler` claim back in the queue (the brief doesn't ask for one; `uv run -m backend.db --reset` restores everything), summarizing the queue agent's conversation (one line per claim stays small for 25 claims), and running claims in parallel.
 
 ---
@@ -122,22 +122,22 @@ One new state, for a claim the agent couldn't finish:
 - `agent/claim.py`: `work_claim(run_id, claim_id, llm)`. It starts the claim through `start_claim`, runs a new `create_agent` with a new thread (`<run_id>-<claim_id>-<attempt>`), posts each step as the pilot did, and calls `release_claim` if the agent raised an error or finished with the claim still in progress. It returns one line: "CLM-1001: approved, $420.00 paid", "CLM-1008: approved $2,240.00, waiting for sign-off", "CLM-1010: referred", or "CLM-1004: failed (timed out), back in the queue (attempt 1 of 2)".
 - Tools: `get_claim`, `get_policy`, `get_claim_history`, `search_documents`, `list_sections`, `read_section`, `record_decision`, `pay_claim`. The result of `read_section` is posted as a `section` step.
 - Middleware: `ModelRetryMiddleware(max_retries=2, on_failure="error")`, `ToolRetryMiddleware` on network errors, `ModelCallLimitMiddleware(run_limit=40, exit_behavior="error")`.
-- `agent/main.py`: the model and the backend client, shared by both agents. Default model `deepseek/deepseek-v4.1-flash` with low reasoning effort, or `MODEL_NAME`, with a request timeout.
+- `agent/main.py`: the model, the backend client and the steps, shared by both agents. `agent/__main__.py`: the command line. Default model `deepseek/deepseek-v4.1-flash` with low reasoning effort, or `MODEL_NAME`, with a request timeout.
 - `backend/instructions/claim.md`: the order of work from manual section 4. Read the claim (stop if it's already decided), the policy and the history, find the benefit's section of the wording and the manual's notes on it, check the documents (manual 5), repeat claims (manual 9), conflicts (manual 8), work out the payout (wording 10, manual 6), decide, record, pay if $1,000 or less, and end with one sentence.
 - `run_agent` in the backend now runs `work_claim` for its claim run. The `get_policy_wording` operation and tool are removed.
 
 **Success criteria** (pytest with a stub model, never a real one)
 
-- [ ] A stub run that reads the claim, searches, reads manual section 9, approves $420.00 and pays leaves the claim `decided` and paid, with a `section` step "Claims manual 9. Repeat claims", and returns "CLM-1001: approved, $420.00 paid"
-- [ ] A stub model that raises an error leaves the claim `waiting` with `attempts` 1 and an error step, and the reply line says it's back in the queue
-- [ ] A stub run that ends without a decision is released the same way
-- [ ] A model that keeps calling tools past the call limit fails that attempt instead of running on
-- [ ] Each attempt gets a new thread: the second attempt's first model call sees only the system prompt and the task, not the first attempt's messages
-- [ ] A claim already decided is not decided or paid again (the backend refuses, and the stub's second `record_decision` gets the refusal)
-- [ ] The claim agent's system prompt comes from `instructions/claim.md`, and nothing under `agent/` refers to `data/`
-- [ ] With no `MODEL_NAME`, the model is `deepseek/deepseek-v4.1-flash` with low reasoning effort; with `MODEL_NAME` set, it's that model
-- [ ] Live check (a few cents): after `uv run -m backend.db --reset`, `uv run -m agent.main --claim CLM-1001` with the backend running prints a decision line, and the claim's steps show the sections read
-- [ ] `npm run check:python` passes with coverage of 80% or more
+- [x] A stub run that reads the claim, searches, reads manual section 9, approves $420.00 and pays leaves the claim `decided` and paid, with a `section` step "Claims manual 9. Repeat claims", and returns "CLM-1001: approved, $420.00 paid"
+- [x] A stub model that raises an error leaves the claim `waiting` with `attempts` 1 and an error step, and the reply line says it's back in the queue
+- [x] A stub run that ends without a decision is released the same way
+- [x] A model that keeps calling tools past the call limit fails that attempt instead of running on
+- [x] Each attempt gets a new thread: the second attempt's first model call sees only the system prompt and the task, not the first attempt's messages
+- [x] A claim already decided is not decided or paid again (the backend refuses, and the stub's second `record_decision` gets the refusal)
+- [x] The claim agent's system prompt comes from `instructions/claim.md`, and nothing under `agent/` refers to `data/`
+- [x] With no `MODEL_NAME`, the model is `deepseek/deepseek-v4.1-flash` with low reasoning effort; with `MODEL_NAME` set, it's that model
+- [x] Live check (a few cents): after `uv run -m backend.db --reset`, `uv run -m agent --claim CLM-1001` with the backend running prints a decision line, and the claim's steps show the sections read
+- [x] `npm run check:python` passes with coverage of 80% or more
 
 ## Phase 4: The queue agent
 
@@ -150,7 +150,7 @@ One new state, for a claim the agent couldn't finish:
 - Middleware: `ModelRetryMiddleware`, and the missed-claims check, an `after_model` hook that, when the model tries to finish, reads `get_run` and, if waiting claims are still in reach, adds a message naming them and jumps back to the model (at most 3 times).
 - When it finishes, the runner records the final reply as the run's summary with `finish_run("finished")`. If the queue agent raises an error, it records `finish_run("failed")` with the error.
 - `backend/instructions/queue.md`: list the waiting claims, write a to-do list of the claims to work within the cap, oldest submitted first unless there's a reason not to, mark each item in progress and then done or left for a handler as each line comes back, retry a claim that went back to the queue once, check for missed claims before finishing, and end with a short summary for the handlers: how many claims were worked, the decisions and payouts, and what's waiting for a handler.
-- `run_queue` in the backend starts `run_queue` in the background. `uv run -m agent.main --limit 5` does the same from the command line.
+- `run_queue` in the backend starts `run_queue` in the background. `uv run -m agent --limit 5` does the same from the command line.
 
 **Success criteria** (pytest with stub models)
 

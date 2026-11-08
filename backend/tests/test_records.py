@@ -64,14 +64,8 @@ def test_get_claim_history_leaves_out_personal_details(client):
         assert detail not in history
 
 
-def test_get_policy_wording(client):
-    wording = client.get("/api/policy-wording").json()
-    assert wording["version"] == "2026.1"
-    assert wording["text"].startswith("# UnderCover Travel Insurance: Policy Wording")
-
-
 def test_get_instructions(client):
-    assert "UnderCover Agent" in client.get("/api/instructions").json()["text"]
+    assert "UnderCover Agent" in client.get("/api/instructions").json()["claim"]
 
 
 def test_list_handlers(client):

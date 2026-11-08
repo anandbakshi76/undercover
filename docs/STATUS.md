@@ -1,18 +1,20 @@
 # Status
 
-The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six phases done). The harness from `docs/HARNESS.md` is being built, following `docs/PLAN_HARNESS.md` (Phases 1 and 2 done). The database schema changed in Phase 2: run `uv run -m backend.db --reset` once.
+The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six phases done). The harness from `docs/HARNESS.md` is being built, following `docs/PLAN_HARNESS.md` (Phases 1 to 3 done). The database schema changed in Phase 2: run `uv run -m backend.db --reset` once.
 
 ## What's built
 
 - `backend/`: FastAPI and SQLite. The database (`backend/undercover.db`, or the file in `UNDERCOVER_DB`) is seeded from `data/` on first start, leaving out `data/evals/` and `data/security/`.
-  - Read: `list_claims`, `get_claim`, `get_policy`, `get_claim_history` (earlier claims only, no personal details), `get_policy_wording`, `get_instructions`, `list_handlers`, `list_steps`
+  - Read: `list_claims`, `get_claim`, `get_policy`, `get_claim_history` (earlier claims only, no personal details), `get_instructions`, `list_handlers`, `list_steps`
   - Documents: `list_sections`, `read_section` and `search_documents` look up the numbered sections of the policy wording and the claims manual (`backend/documents.py`)
   - Write: `add_step`, `record_decision`, `pay_claim`, `sign_off`, `run_agent`, `run_queue`
   - Runs: `start_run`, `get_run`, `get_latest_run`, `update_todos`, `finish_run`, `list_waiting_claims`, `start_claim`, `release_claim`. A run has a cap on the number of claims, enforced by `start_claim`, and a to-do list.
   - Claim states: `waiting`, `in_progress`, `awaiting_sign_off`, `decided`, `needs_handler`. A claim that fails before a decision goes back to `waiting`; on its second failure it is `needs_handler`. On startup the backend releases any claim left `in_progress`. Approving a payout over $1,000 moves a claim to `awaiting_sign_off`, and `pay_claim` refuses it until a handler signs off. Signing off pays the claim.
   - `run_agent` (a run with a cap of 1) and `run_queue` (takes `limit`) run the agent in a background task. Steps from every attempt are kept.
-- `backend/instructions.md`: the agent's instructions, served by `get_instructions` and shown read only in the dashboard.
-- `agent/`: the UnderCover Agent, `run(claim_id, thread_id)`, built with `create_agent` on OpenRouter (`openai/gpt-6-luna` with low reasoning effort, or `MODEL_NAME`). Its tools call the backend: `get_claim`, `get_policy`, `get_claim_history`, `get_policy_wording`, `record_decision` and `pay_claim`. It fetches its instructions from the backend and posts each tool call, result and reply as a step.
+- `backend/instructions/claim.md`: the claim agent's instructions, served by `get_instructions`.
+- `agent/`: the UnderCover Agent on OpenRouter (`deepseek/deepseek-v4.1-flash` with low reasoning effort, or `MODEL_NAME`).
+  - `agent/claim.py`: the claim agent. `work_claim(run_id, claim_id)` starts a claim in a run, works it with a new `create_agent` and a new thread, releases it if it fails, and returns one line such as "CLM-1001: approved, $420.00 paid". Its tools call the backend: `get_claim`, `get_policy`, `get_claim_history`, `search_documents`, `list_sections`, `read_section`, `record_decision` and `pay_claim`. Middleware retries the model and the backend, and stops an agent after 40 model calls. Each tool call, result, section read and reply is posted as a step.
+  - `uv run -m agent --claim CLM-1001` works one claim against a running backend.
 - `dashboard/`: React, Vite and TypeScript in the UnderCover brand. It starts in the system's light or dark setting, and the Dark mode button in the header switches it and remembers the choice in the browser.
   - `#/`: the queue, with a count for each state and a Run the queue button
   - `#/claims/<id>`: the claim, its policy, the decision with its reason and section, the payment, a Run agent button, the agent's steps as it works, and sign-off by a handler for payouts over $1,000

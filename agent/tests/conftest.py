@@ -14,3 +14,4 @@ def fresh_backend(tmp_path, monkeypatch):
     db.init()
     client = TestClient(app)
     monkeypatch.setattr(main, "backend", lambda: nullcontext(client))
+    monkeypatch.setattr(main, "RETRY_DELAY", 0)
