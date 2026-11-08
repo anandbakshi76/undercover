@@ -143,7 +143,7 @@ One new state, for a claim the agent couldn't finish:
 
 **Builds:** the agent that runs the queue: the to-do list, a fresh claim agent per claim, the check for missed claims and the summary.
 
-- `agent/queue.py`: `run_queue(run_id, llm)`. A `create_agent` with three tools for this run:
+- `agent/queue_agent.py`: `run_queue(run_id, llm)`. A `create_agent` with three tools for this run:
   - `write_todos(todos)`: saves the whole list through `update_todos`
   - `list_waiting_claims()`: the waiting claims, with the run's cap and how many it has left
   - `work_claim(claim_id)`: runs the claim agent from Phase 3 and returns its one line. A refusal from the backend (over the cap, not waiting) comes back as the backend's message.
@@ -154,15 +154,15 @@ One new state, for a claim the agent couldn't finish:
 
 **Success criteria** (pytest with stub models)
 
-- [ ] A stub queue run with a cap of 2 writes a to-do list, works two claims through stub claim agents and finishes: the run is `finished` with the to-do list and summary stored, two claims are decided and the other 23 are still `waiting`
-- [ ] The cap holds even when the stub tries to work a third claim: it gets the backend's refusal and the claim stays `waiting`
-- [ ] A claim whose claim agent fails doesn't stop the run: the next claim is still worked
-- [ ] A failed claim goes back in the queue and is tried again in the same run, then decided
-- [ ] A claim that fails twice ends `needs_handler`, and the run still finishes
-- [ ] The missed-claims check: a stub that tries to finish after one claim with a cap of 2 is told the waiting claims and sent back, and then works the second
-- [ ] A queue agent that raises an error leaves its run `failed` and no claim `in_progress`
-- [ ] The queue agent's system prompt comes from `instructions/queue.md`
-- [ ] `npm run check:python` passes with coverage of 80% or more
+- [x] A stub queue run with a cap of 2 writes a to-do list, works two claims through stub claim agents and finishes: the run is `finished` with the to-do list and summary stored, two claims are decided and the other 23 are still `waiting`
+- [x] The cap holds even when the stub tries to work a third claim: it gets the backend's refusal and the claim stays `waiting`
+- [x] A claim whose claim agent fails doesn't stop the run: the next claim is still worked
+- [x] A failed claim goes back in the queue and is tried again in the same run, then decided
+- [x] A claim that fails twice ends `needs_handler`, and the run still finishes
+- [x] The missed-claims check: a stub that tries to finish after one claim with a cap of 2 is told the waiting claims and sent back, and then works the second
+- [x] A queue agent that raises an error leaves its run `failed` and no claim `in_progress`
+- [x] The queue agent's system prompt comes from `instructions/queue.md`
+- [x] `npm run check:python` passes with coverage of 80% or more
 
 ## Phase 5: The dashboard
 

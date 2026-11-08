@@ -218,16 +218,27 @@ def test_run_agent_on_an_unknown_claim_is_404(client, runs):
     assert client.post("/api/claims/CLM-0000/run").status_code == 404
 
 
-def test_run_queue_is_capped(client, runs):
+def test_run_queue_starts_the_queue_agent_on_a_capped_run(client, monkeypatch):
+    started = []
+    monkeypatch.setattr(main.queue_agent, "run_queue", started.append)
     run = client.post("/api/queue/run", json={"limit": 3}).json()
     assert run["claim_limit"] == 3
-    assert [claim_id for _, claim_id in runs] == ["CLM-1001", "CLM-1002", "CLM-1003"]
-    statuses = [c["status"] for c in client.get("/api/claims").json()]
-    assert statuses.count("decided") == 3
-    assert statuses.count("waiting") == 22
-    latest = client.get("/api/queue/latest-run").json()
-    assert latest["run_id"] == run["run_id"]
-    assert latest["status"] == "finished"
+    assert run["kind"] == "queue"
+    assert started == [run["run_id"]]
+    assert client.get("/api/queue/latest-run").json()["run_id"] == run["run_id"]
+
+
+def test_a_cap_of_one_says_claim(client):
+    run_id = new_run(client, 1)
+    start(client, run_id, "CLM-1001")
+    refused = start(client, run_id, "CLM-1002")
+    assert refused.json()["detail"] == "This run has reached its cap of 1 claim."
+
+
+def test_the_instructions_cover_the_queue_and_a_claim(client):
+    instructions = client.get("/api/instructions").json()
+    assert instructions["queue"].startswith("# Running the queue")
+    assert instructions["claim"].startswith("# Working a claim")
 
 
 def test_run_queue_needs_a_cap_of_at_least_one(client, runs):

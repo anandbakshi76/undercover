@@ -13,6 +13,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from agent import claim as claim_agent
+from agent import queue_agent
 from backend import db, documents
 
 INSTRUCTIONS = Path(__file__).resolve().parent / "instructions"
@@ -169,8 +170,11 @@ def search_documents(text: str) -> list[dict[str, str]]:
 
 @app.get("/api/instructions", operation_id="get_instructions")
 def get_instructions() -> dict[str, str]:
-    """Get the UnderCover Agent's instructions for working a claim."""
-    return {"claim": (INSTRUCTIONS / "claim.md").read_text(encoding="utf-8")}
+    """Get the UnderCover Agent's instructions for running the queue and a claim."""
+    return {
+        kind: (INSTRUCTIONS / f"{kind}.md").read_text(encoding="utf-8")
+        for kind in ["queue", "claim"]
+    }
 
 
 @app.get("/api/handlers", operation_id="list_handlers")
@@ -419,8 +423,11 @@ def start(connection: sqlite3.Connection, run_id: str, claim_id: str) -> None:
         raise HTTPException(409, f"Claim {claim_id} is left for a handler.")
     worked = worked_ids(connection, run_id)
     if claim_id not in worked and len(worked) >= run["claim_limit"]:
+        limit = run["claim_limit"]
         raise HTTPException(
-            409, f"This run has reached its cap of {run['claim_limit']} claims."
+            409,
+            f"This run has reached its cap of {limit} "
+            f"{'claim' if limit == 1 else 'claims'}.",
         )
     started = connection.execute(
         "UPDATE claims SET status = 'in_progress', run_id = ? "
@@ -558,25 +565,6 @@ def work_one(run_id: str, claim_id: str) -> None:
         end_run(connection, run_id, RunEnd(status="finished", summary=""))
 
 
-def work_queue(run_id: str) -> None:
-    with db.connect() as connection:
-        claim_ids = waiting_ids(connection)
-    for claim_id in claim_ids:
-        try:
-            with db.connect() as connection:
-                start(connection, run_id, claim_id)
-        except HTTPException:
-            continue
-        claim_agent.work_started(run_id, claim_id)
-    with db.connect() as connection:
-        worked = len(worked_ids(connection, run_id))
-        end_run(
-            connection,
-            run_id,
-            RunEnd(status="finished", summary=f"Worked {worked} claims."),
-        )
-
-
 @app.post("/api/claims/{claim_id}/run", operation_id="run_agent")
 def run_agent(claim_id: str, background: BackgroundTasks) -> dict[str, str]:
     """Start the UnderCover Agent on one waiting claim."""
@@ -594,5 +582,5 @@ def run_queue(run_limit: RunLimit, background: BackgroundTasks) -> dict[str, Any
     with db.connect() as connection:
         run_id = new_run(connection, "queue", run_limit.limit)
         run = run_view(connection, run_id)
-    background.add_task(work_queue, run_id)
+    background.add_task(queue_agent.run_queue, run_id)
     return run

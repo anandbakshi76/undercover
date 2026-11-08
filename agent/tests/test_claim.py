@@ -167,6 +167,7 @@ def test_a_decided_claim_is_never_decided_or_paid_twice():
 
 def test_instructions_come_from_the_backend(tmp_path, monkeypatch):
     (tmp_path / "claim.md").write_text("Decide claims carefully.", encoding="utf-8")
+    (tmp_path / "queue.md").write_text("Run the queue.", encoding="utf-8")
     monkeypatch.setattr(backend, "INSTRUCTIONS", tmp_path)
     model = stub(AIMessage(content="Done."))
     claim_agent.decide("CLM-1001", "t1", model)

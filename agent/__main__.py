@@ -2,15 +2,19 @@
 
 import argparse
 
-from agent import claim, main
+from agent import claim, main, queue_agent
 
 
 def cli(argv: list[str] | None = None) -> str:
-    """Work one claim, and return its line."""
+    """Run the queue capped at a number of claims, or work one named claim."""
     parser = argparse.ArgumentParser(description="Run the UnderCover Agent.")
-    parser.add_argument("--claim", required=True, help="the claim to work")
+    choice = parser.add_mutually_exclusive_group(required=True)
+    choice.add_argument("--limit", type=int, help="run the queue on this many claims")
+    choice.add_argument("--claim", help="work this one claim")
     args = parser.parse_args(argv)
-    run = main.call("POST", "/api/runs", {"limit": 1})
+    run = main.call("POST", "/api/runs", {"limit": args.limit or 1})
+    if args.limit:
+        return queue_agent.run_queue(run["run_id"])
     line = claim.work_claim(run["run_id"], args.claim)
     main.call(
         "POST",
