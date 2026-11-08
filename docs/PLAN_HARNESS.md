@@ -88,11 +88,11 @@ One new state, for a claim the agent couldn't finish:
 | Method and path | `operation_id` | Does |
 |---|---|---|
 | `POST /api/runs` | `start_run` | Creates a queue run with a cap and returns it, without starting an agent |
-| `GET /api/runs/latest` | `get_latest_run` | The latest queue run, or null |
+| `GET /api/queue/latest-run` | `get_latest_run` | The latest queue run, or null |
 | `GET /api/runs/{run_id}` | `get_run` | The run: cap, status, to-do list, summary, claims worked, and the waiting claims still in reach |
 | `PUT /api/runs/{run_id}/todos` | `update_todos` | Replaces the run's to-do list: each item has `content` and `status` (`to_do`, `in_progress`, `done`, `left_for_handler`) |
 | `POST /api/runs/{run_id}/finish` | `finish_run` | Records the run's final status and summary |
-| `GET /api/claims/waiting` | `list_waiting_claims` | The waiting claims: id, type, summary, amount claimed, submitted date, attempts |
+| `GET /api/queue/waiting` | `list_waiting_claims` | The waiting claims: id, type, summary, amount claimed, submitted date, attempts |
 | `POST /api/claims/{claim_id}/start` | `start_claim` | Moves a waiting claim to `in_progress` in a run; refuses with 409 if the claim isn't waiting or the run has reached its cap |
 | `POST /api/claims/{claim_id}/release` | `release_claim` | If the claim is still `in_progress`, adds an attempt, records the problem as an error step, and sets `waiting` or, on the second failure, `needs_handler` |
 
@@ -104,16 +104,16 @@ One new state, for a claim the agent couldn't finish:
 
 **Success criteria** (pytest)
 
-- [ ] A run with a cap of 2 can start two claims; a third is refused with 409 and stays `waiting`
-- [ ] A claim released once goes back to `waiting` with `attempts` 1 and an error step; the same run can start it again without counting it twice against the cap
-- [ ] A claim released a second time is `needs_handler`, and `start_claim` refuses it
-- [ ] Releasing a claim that's already decided changes nothing and adds no step
-- [ ] Steps from both attempts are kept, in order
-- [ ] `update_todos` stores the list, `get_run` and `get_latest_run` return it; an unknown status returns 422
-- [ ] `get_run` lists the waiting claims in reach: a claim the run worked that went back to waiting, and other waiting claims only while the run is under its cap
-- [ ] Startup releases a claim left `in_progress` and marks a `running` run `failed`
-- [ ] `run_queue` with `limit` 0 returns 422; `run_agent` on a claim that isn't waiting returns 409
-- [ ] `npm run check:python` passes with coverage of 80% or more
+- [x] A run with a cap of 2 can start two claims; a third is refused with 409 and stays `waiting`
+- [x] A claim released once goes back to `waiting` with `attempts` 1 and an error step; the same run can start it again without counting it twice against the cap
+- [x] A claim released a second time is `needs_handler`, and `start_claim` refuses it
+- [x] Releasing a claim that's already decided changes nothing and adds no step
+- [x] Steps from both attempts are kept, in order
+- [x] `update_todos` stores the list, `get_run` and `get_latest_run` return it; an unknown status returns 422
+- [x] `get_run` lists the waiting claims in reach: a claim the run worked that went back to waiting, and other waiting claims only while the run is under its cap
+- [x] Startup releases a claim left `in_progress` and marks a `running` run `failed`
+- [x] `run_queue` with `limit` 0 returns 422; `run_agent` on a claim that isn't waiting returns 409
+- [x] `npm run check:python` passes with coverage of 80% or more
 
 ## Phase 3: The claim agent
 

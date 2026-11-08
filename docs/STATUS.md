@@ -1,6 +1,6 @@
 # Status
 
-The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six phases done). The harness from `docs/HARNESS.md` is being built, following `docs/PLAN_HARNESS.md` (Phase 1 done).
+The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six phases done). The harness from `docs/HARNESS.md` is being built, following `docs/PLAN_HARNESS.md` (Phases 1 and 2 done). The database schema changed in Phase 2: run `uv run -m backend.db --reset` once.
 
 ## What's built
 
@@ -8,8 +8,9 @@ The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six
   - Read: `list_claims`, `get_claim`, `get_policy`, `get_claim_history` (earlier claims only, no personal details), `get_policy_wording`, `get_instructions`, `list_handlers`, `list_steps`
   - Documents: `list_sections`, `read_section` and `search_documents` look up the numbered sections of the policy wording and the claims manual (`backend/documents.py`)
   - Write: `add_step`, `record_decision`, `pay_claim`, `sign_off`, `run_agent`, `run_queue`
-  - Claim states: `waiting`, `in_progress`, `awaiting_sign_off`, `decided`. Approving a payout over $1,000 moves a claim to `awaiting_sign_off`, and `pay_claim` refuses it until a handler signs off. Signing off pays the claim.
-  - `run_agent` and `run_queue` run the agent in a background task. A run that ends without a decision puts the claim back to `waiting` with an error step.
+  - Runs: `start_run`, `get_run`, `get_latest_run`, `update_todos`, `finish_run`, `list_waiting_claims`, `start_claim`, `release_claim`. A run has a cap on the number of claims, enforced by `start_claim`, and a to-do list.
+  - Claim states: `waiting`, `in_progress`, `awaiting_sign_off`, `decided`, `needs_handler`. A claim that fails before a decision goes back to `waiting`; on its second failure it is `needs_handler`. On startup the backend releases any claim left `in_progress`. Approving a payout over $1,000 moves a claim to `awaiting_sign_off`, and `pay_claim` refuses it until a handler signs off. Signing off pays the claim.
+  - `run_agent` (a run with a cap of 1) and `run_queue` (takes `limit`) run the agent in a background task. Steps from every attempt are kept.
 - `backend/instructions.md`: the agent's instructions, served by `get_instructions` and shown read only in the dashboard.
 - `agent/`: the UnderCover Agent, `run(claim_id, thread_id)`, built with `create_agent` on OpenRouter (`openai/gpt-6-luna` with low reasoning effort, or `MODEL_NAME`). Its tools call the backend: `get_claim`, `get_policy`, `get_claim_history`, `get_policy_wording`, `record_decision` and `pay_claim`. It fetches its instructions from the backend and posts each tool call, result and reply as a step.
 - `dashboard/`: React, Vite and TypeScript in the UnderCover brand. It starts in the system's light or dark setting, and the Dark mode button in the header switches it and remembers the choice in the browser.

@@ -126,8 +126,9 @@ def test_a_failing_model_puts_the_claim_back(monkeypatch):
     monkeypatch.setattr(main, "model", lambda: BrokenModel(messages=iter([])))
     backend.db.init()
     with backend.db.connect() as connection:
-        backend.start(connection, "CLM-1001")
-    backend.work("CLM-1001")
+        run_id = backend.new_run(connection, "claim", 1)
+        backend.start(connection, run_id, "CLM-1001")
+    backend.work(run_id, "CLM-1001")
     assert claim("CLM-1001")["status"] == "waiting"
     error = recorded_steps("CLM-1001")[-1]
     assert error["kind"] == "error"
