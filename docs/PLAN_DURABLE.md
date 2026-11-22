@@ -117,14 +117,14 @@ Retries move from middleware to LangGraph's `RetryPolicy` on the nodes: the mode
 
 **Success criteria**
 
-- [ ] pytest: every existing backend test passes on SQLite, with no network
-- [ ] pytest: `engine()` is SQLite without `DATABASE_URL`, and with it is Postgres with a pool of 4, no overflow and the `undercover` search path (checked on the engine object, without connecting)
-- [ ] pytest: a repeated decision returns the claim with one decision; a different decision returns 409
-- [ ] pytest: a repeated payment returns the claim with one payment; a different amount returns 409
-- [ ] pytest: `--reset` restores 25 waiting claims on SQLite; the latest run and the order of a run's claims come back right without `rowid`
-- [ ] `uv run --env-file .env -m backend.db --reset` seeds Supabase; the Supabase MCP server lists `claims`, `records`, `runs`, `run_claims` and `steps` in `undercover`, with 25 claims, and nothing new in `public`
-- [ ] With `npm run dev`, `curl http://localhost:8000/api/claims` returns 25 waiting claims from Supabase
-- [ ] `npm run check:python` passes with coverage of 80% or more
+- [x] pytest: every existing backend test passes on SQLite, with no network
+- [x] pytest: `engine()` is SQLite without `DATABASE_URL`, and with it is Postgres with a pool of 4, no overflow and the `undercover` search path (checked on the engine object, without connecting)
+- [x] pytest: a repeated decision returns the claim with one decision; a different decision returns 409
+- [x] pytest: a repeated payment returns the claim with one payment; a different amount returns 409
+- [x] pytest: `--reset` restores 25 waiting claims on SQLite; the latest run and the order of a run's claims come back right without `rowid`
+- [x] `uv run --env-file .env -m backend.db --reset` seeds Supabase; the Supabase MCP server lists `claims`, `records`, `runs`, `run_claims` and `steps` in `undercover`, with 25 claims, and nothing new in `public`
+- [x] With `npm run dev`, `curl http://localhost:8000/api/claims` returns 25 waiting claims from Supabase
+- [x] `npm run check:python` passes with coverage of 80% or more
 
 ## Phase 3: The claim agent as a graph
 

@@ -2,6 +2,7 @@ import json
 
 import pytest
 from fastapi.routing import APIRoute
+from sqlalchemy import update
 
 from backend import db
 from backend.main import app
@@ -33,7 +34,7 @@ def test_seeding_twice_adds_nothing(client):
 
 def test_reset_restores_the_queue(client):
     with db.connect() as connection:
-        connection.execute("UPDATE claims SET status = 'decided'")
+        connection.execute(update(db.claims).values(status="decided"))
     db.reset()
     claims = client.get("/api/claims").json()
     assert {claim["status"] for claim in claims} == {"waiting"}
@@ -103,3 +104,19 @@ def test_no_operation_has_optional_inputs():
                 body = operation["requestBody"]["content"]["application/json"]
                 schema = schemas[body["schema"]["$ref"].split("/")[-1]]
                 assert set(schema["required"]) == set(schema["properties"])
+
+
+def test_the_engine_is_sqlite_without_a_database_url(tmp_path):
+    assert db.engine().dialect.name == "sqlite"
+    assert not db.on_postgres()
+
+
+def test_the_engine_is_supabase_with_a_database_url(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@db.example.com:5432/postgres")
+    engine = db.engine()
+    assert engine.dialect.name == "postgresql"
+    assert engine.url.drivername == "postgresql+psycopg"
+    assert engine.pool.size() == 4  # pyright: ignore[reportAttributeAccessIssue]
+    assert engine.pool._max_overflow == 0  # pyright: ignore[reportAttributeAccessIssue]
+    assert engine.pool._pre_ping  # pyright: ignore[reportAttributeAccessIssue]
+    assert db.describe() == "the undercover schema on Supabase"

@@ -51,7 +51,6 @@ def test_sign_off_pays_once_and_decides(client):
     assert claim["status"] == "decided"
     assert claim["sign_off"]["handler_id"] == "HND-01"
     assert claim["payment"]["amount"] == 1250.0
-    assert pay(client, "CLM-1002", 1250.0).status_code == 409
 
 
 @pytest.mark.parametrize("decision", ["decline", "refer"])
@@ -82,9 +81,34 @@ def test_unknown_decision_is_rejected(client):
     assert decide(client, "CLM-1001", decision="maybe").status_code == 422
 
 
-def test_claim_is_decided_once(client):
+def test_a_repeated_decision_counts_as_done(client):
+    first = decide(client, "CLM-1001").json()
+    again = decide(client, "CLM-1001")
+    assert again.status_code == 200
+    assert again.json()["decision"] == first["decision"]
+
+
+def test_a_different_decision_is_refused(client):
     decide(client, "CLM-1001")
-    assert decide(client, "CLM-1001").status_code == 409
+    assert decide(client, "CLM-1001", payout=400.0).status_code == 409
+    assert decide(client, "CLM-1001", decision="decline", payout=0).status_code == 409
+    assert client.get("/api/claims/CLM-1001").json()["decision"]["payout"] == 420.0
+
+
+def test_a_repeated_payment_counts_as_done(client):
+    decide(client, "CLM-1001")
+    paid = pay(client, "CLM-1001", 420.0).json()["payment"]
+    again = pay(client, "CLM-1001", 420.0)
+    assert again.status_code == 200
+    assert again.json()["payment"] == paid
+
+
+def test_a_different_payment_is_refused(client):
+    decide(client, "CLM-1001")
+    pay(client, "CLM-1001", 420.0)
+    response = pay(client, "CLM-1001", 400.0)
+    assert response.status_code == 409
+    assert response.json()["detail"] == "This claim has already been paid."
 
 
 def test_sign_off_needs_a_known_handler(client):
