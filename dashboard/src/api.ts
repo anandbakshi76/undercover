@@ -47,8 +47,15 @@ export interface ClaimDetail extends ClaimBase {
   documents: ClaimDocument[];
   decision: Decision | null;
   sign_off: { handler_id: string; signed_off_at: string } | null;
-  payment: { amount: number; paid_at: string } | null;
+  payment: {
+    amount: number;
+    paid_at: string;
+    signed_off_by: string | null;
+    signed_off_at: string | null;
+  } | null;
   attempts: number;
+  thread_id: string | null;
+  run_id: string | null;
 }
 
 export interface Policy {

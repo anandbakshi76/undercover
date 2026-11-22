@@ -201,12 +201,12 @@ Retries move from middleware to LangGraph's `RetryPolicy` on the nodes: the mode
 
 **Success criteria**
 
-- [ ] vitest: a claim waiting for sign-off shows a Sign off button; signing off calls `sign_off` and shows the claim In progress and refreshing
-- [ ] vitest: a paid claim with a sign-off shows the amount, the handler's name and both times; an unpaid approval shows Payment pending
-- [ ] vitest: a 503 on Run agent and on Run the queue shows the backend's message
-- [ ] `npm run e2e` passes every spec, with the stand-in recording the `resume_claim` request
+- [x] vitest: a claim waiting for sign-off shows a Sign off button; signing off calls `sign_off` and shows the claim In progress and refreshing
+- [x] vitest: a paid claim with a sign-off shows the amount, the handler's name and both times; an unpaid approval shows Payment pending
+- [x] vitest: a 503 on Run agent and on Run the queue shows the backend's message
+- [x] `npm run e2e` passes every spec, with the stand-in recording the `resume_claim` request
 - [ ] Playwright MCP: a claim's page after sign-off in light and dark mode, with no horizontal scroll at phone width
-- [ ] `npm run check:ts` passes with coverage of 80% or more
+- [x] `npm run check:ts` passes with coverage of 80% or more
 
 ## Phase 6: A live run on Supabase and the handover
 

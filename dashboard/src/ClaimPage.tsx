@@ -7,7 +7,7 @@ import {
   type Step,
 } from "./api";
 import { Badge } from "./Badge";
-import { DECISION_LABELS, money, words } from "./format";
+import { DECISION_LABELS, dateTime, money, words } from "./format";
 import { useAction, useLoad } from "./hooks";
 
 const STEP_LABELS: Record<Step["kind"], string> = {
@@ -155,25 +155,31 @@ function SignOffForm({
         ))}
       </select>
       <button type="submit" disabled={!handlerId || action.busy}>
-        Sign off and pay
+        Sign off
       </button>
       {action.error && <p role="alert">{action.error}</p>}
     </form>
   );
 }
 
+function signedOff(claim: ClaimDetail, handlers: Handler[]): string | null {
+  if (!claim.sign_off) return null;
+  const { handler_id: id, signed_off_at: at } = claim.sign_off;
+  const name = handlers.find((h) => h.handler_id === id)?.name ?? id;
+  return `signed off by ${name} at ${dateTime(at)}`;
+}
+
 function Payment({
   claim,
   handlers,
 }: Readonly<{ claim: ClaimDetail; handlers: Handler[] }>) {
+  const sign = signedOff(claim, handlers);
   if (claim.payment) {
-    const handler = handlers.find(
-      (h) => h.handler_id === claim.sign_off?.handler_id,
-    );
     return (
       <p className="payment">
-        Paid <span className="mono">{money(claim.payment.amount)}</span>
-        {handler && ` after sign-off by ${handler.name}`}
+        Paid <span className="mono">{money(claim.payment.amount)}</span> on{" "}
+        {dateTime(claim.payment.paid_at)}
+        {sign && `, ${sign}`}
       </p>
     );
   }
@@ -184,9 +190,8 @@ function Payment({
       </p>
     );
   }
-  return claim.decision?.decision === "approve" ? (
-    <p className="payment">Not paid yet.</p>
-  ) : null;
+  if (claim.decision?.decision !== "approve") return null;
+  return <p className="payment">Payment pending{sign && `, ${sign}`}</p>;
 }
 
 function undecided(claim: ClaimDetail): string {
@@ -290,11 +295,9 @@ function Steps({
   );
 }
 
-// The agent keeps working after it decides, to pay, until its reply or an error.
-function working(claim: ClaimDetail, steps: Step[]): boolean {
-  const last = steps.at(-1);
-  if (claim.status === "in_progress") return true;
-  return last !== undefined && last.kind !== "reply" && last.kind !== "error";
+// The agent owes the claim work until it is paid, so the page keeps refreshing.
+function working(claim: ClaimDetail): boolean {
+  return claim.status === "in_progress";
 }
 
 export function ClaimPage({ claimId }: Readonly<{ claimId: string }>) {
@@ -307,7 +310,7 @@ export function ClaimPage({ claimId }: Readonly<{ claimId: string }>) {
     return { claim, policy, steps };
   }, [claimId]);
   const { data, error, refresh } = useLoad(load, (loaded) =>
-    Boolean(loaded && working(loaded.claim, loaded.steps)),
+    Boolean(loaded && working(loaded.claim)),
   );
   const { data: handlers } = useLoad(api.handlers);
   const run = useAction();
@@ -358,7 +361,7 @@ export function ClaimPage({ claimId }: Readonly<{ claimId: string }>) {
             onChange={refresh}
           />
           <SectionsRead steps={steps} />
-          <Steps steps={steps} working={working(claim, steps)} />
+          <Steps steps={steps} working={working(claim)} />
           <PolicyFacts policy={policy} />
         </div>
       </div>

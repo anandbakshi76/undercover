@@ -9,6 +9,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import type { Decision } from "./api";
 import { ClaimPage } from "./ClaimPage";
+import { dateTime } from "./format";
 import { POLL_MS } from "./hooks";
 import {
   calls,
@@ -113,16 +114,33 @@ it("shows a decided claim with its decision", async () => {
   expect(screen.queryByRole("combobox")).toBeNull();
 });
 
-it("signs off a payout over the limit", async () => {
+const SIGNED_OFF = {
+  handler_id: "HND-01",
+  signed_off_at: "2026-10-28T10:05:00+00:00",
+};
+const PAID = {
+  amount: 1250,
+  paid_at: "2026-10-28T10:06:00+00:00",
+  signed_off_by: "HND-01",
+  signed_off_at: "2026-10-28T10:05:00+00:00",
+};
+
+it("signs off a payout over the limit and follows it until it is paid", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   const fetchMock = mockApi(
     routes({
       "GET /api/claims/CLM-1001": new Replies([
         claim({ status: "awaiting_sign_off", decision: approval }),
         claim({
+          status: "in_progress",
+          decision: approval,
+          sign_off: SIGNED_OFF,
+        }),
+        claim({
           status: "decided",
           decision: approval,
-          sign_off: { handler_id: "HND-01", signed_off_at: "2026-10-28" },
-          payment: { amount: 1250, paid_at: "2026-10-28" },
+          sign_off: SIGNED_OFF,
+          payment: PAID,
         }),
       ]),
       "POST /api/claims/CLM-1001/sign-off": claim(),
@@ -132,16 +150,28 @@ it("signs off a payout over the limit", async () => {
   expect(
     await screen.findByText("The payment waits for a handler's sign-off."),
   ).toBeDefined();
-  const submit = screen.getByRole("button", { name: "Sign off and pay" });
+  const submit = screen.getByRole("button", { name: "Sign off" });
   expect(submit.hasAttribute("disabled")).toBe(true);
   fireEvent.change(await screen.findByLabelText("Handler"), {
     target: { value: "HND-01" },
   });
   fireEvent.click(submit);
   expect(
-    await screen.findByText("after sign-off by Dana Whitfield", {
-      exact: false,
-    }),
+    await screen.findByText(
+      `Payment pending, signed off by Dana Whitfield at ${dateTime(SIGNED_OFF.signed_off_at)}`,
+    ),
+  ).toBeDefined();
+  expect(screen.getByText("In progress")).toBeDefined();
+  expect(screen.queryByRole("combobox")).toBeNull();
+  await act(() => vi.advanceTimersByTimeAsync(POLL_MS));
+  expect(
+    await screen.findByText(
+      `on ${dateTime(PAID.paid_at)}, signed off by Dana Whitfield at ${dateTime(PAID.signed_off_at)}`,
+      { exact: false },
+    ),
+  ).toBeDefined();
+  expect(
+    screen.getByText("$1,250.00", { selector: ".payment .mono" }),
   ).toBeDefined();
   expect(calls(fetchMock)).toContain("POST /api/claims/CLM-1001/sign-off");
 });
@@ -164,7 +194,7 @@ it("shows the backend's message when sign-off fails", async () => {
   fireEvent.change(screen.getByLabelText("Handler"), {
     target: { value: "HND-01" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Sign off and pay" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sign off" }));
   expect((await screen.findByRole("alert")).textContent).toBe(
     "Claim CLM-1001 is not waiting for sign-off.",
   );
@@ -180,7 +210,7 @@ it("shows an approval that has not been paid", async () => {
     }),
   );
   render(<ClaimPage claimId="CLM-1001" />);
-  expect(await screen.findByText("Not paid yet.")).toBeDefined();
+  expect(await screen.findByText("Payment pending")).toBeDefined();
 });
 
 it("shows an error when the claim cannot load", async () => {
@@ -198,26 +228,52 @@ it("shows an error when the claim cannot load", async () => {
   );
 });
 
-it("keeps following the agent after it decides, until it replies", async () => {
+it("keeps refreshing while the claim is in progress and stops once it is paid", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
-  const decided = claim({ status: "decided", decision: approval });
+  const small = { ...approval, payout: 420 };
   mockApi(
     routes({
-      "GET /api/claims/CLM-1001": decided,
-      "GET /api/claims/CLM-1001/steps": new Replies([
-        [step(1, { text: "record_decision({})" })],
-        [
-          step(1, { text: "record_decision({})" }),
-          step(2, { kind: "reply", text: "Approved and paid." }),
-        ],
+      "GET /api/claims/CLM-1001/steps": [step(1)],
+      "GET /api/claims/CLM-1001": new Replies([
+        claim({ status: "in_progress", decision: small }),
+        claim({
+          status: "decided",
+          decision: small,
+          payment: {
+            ...PAID,
+            amount: 420,
+            signed_off_by: null,
+            signed_off_at: null,
+          },
+        }),
       ]),
     }),
   );
   render(<ClaimPage claimId="CLM-1001" />);
   expect(await screen.findByText("Working...")).toBeDefined();
+  expect(screen.getByText("Payment pending")).toBeDefined();
   await act(() => vi.advanceTimersByTimeAsync(POLL_MS));
-  expect(screen.getByText("Approved and paid.")).toBeDefined();
   expect(screen.queryByText("Working...")).toBeNull();
+  expect(
+    screen.getByText("$420.00", { selector: ".payment .mono" }),
+  ).toBeDefined();
+  expect(screen.queryByText("signed off", { exact: false })).toBeNull();
+});
+
+it("shows a Run agent error, such as the agent not running", async () => {
+  mockApi(
+    routes({
+      "POST /api/claims/CLM-1001/run": new Failure(
+        503,
+        "The agent isn't running.",
+      ),
+    }),
+  );
+  render(<ClaimPage claimId="CLM-1001" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Run agent" }));
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "The agent isn't running.",
+  );
 });
 
 it("lists the sections the agent read, once each and in order", async () => {

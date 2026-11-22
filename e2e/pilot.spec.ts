@@ -50,7 +50,7 @@ test("the agent's steps and decision show on the claim", async ({
   await expect(page.getByRole("button", { name: "Run agent" })).toBeHidden();
 });
 
-test("a payout over $1,000 waits for a handler's sign-off", async ({
+test("a sign-off puts the claim back in progress and tells the agent", async ({
   page,
   request,
 }) => {
@@ -75,9 +75,26 @@ test("a payout over $1,000 waits for a handler's sign-off", async ({
     page.getByText("The payment waits for a handler's sign-off."),
   ).toBeVisible();
   await page.getByLabel("Handler").selectOption("HND-01");
-  await page.getByRole("button", { name: "Sign off and pay" }).click();
+  await page.getByRole("button", { name: "Sign off", exact: true }).click();
+  await expect(page.locator(".actions .badge")).toHaveText("In progress");
   await expect(
-    page.getByText("Paid $1,250.00 after sign-off by Dana Whitfield"),
+    page.getByText(/Payment pending, signed off by Dana Whitfield at /),
+  ).toBeVisible();
+
+  await expect
+    .poll(async () => {
+      const sent = await request.get("http://127.0.0.1:8003/requests");
+      return ((await sent.json()) as { path: string }[]).map((r) => r.path);
+    })
+    .toContain("/api/claims/CLM-1011/resume");
+
+  // The agent is stood in for: it pays once the sign-off has reached it.
+  const paid = await request.post("/api/claims/CLM-1011/payment", {
+    data: { amount: 1250 },
+  });
+  expect(paid.status()).toBe(200);
+  await expect(
+    page.getByText(/Paid \$1,250\.00 on .*, signed off by Dana Whitfield at /),
   ).toBeVisible();
   await expect(page.locator(".actions .badge")).toHaveText("Decided");
 });

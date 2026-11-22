@@ -9,6 +9,15 @@ export function money(amount: number): string {
   return dollars.format(amount);
 }
 
+const times = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+export function dateTime(iso: string): string {
+  return times.format(new Date(iso));
+}
+
 export function words(value: string): string {
   const spaced = value.replaceAll("_", " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);

@@ -202,13 +202,13 @@ it("cannot start a run while one is running", async () => {
 it("shows an error from running the queue", async () => {
   mockApi(
     routes({
-      "POST /api/queue/run": new Failure(500, "The backend is down."),
+      "POST /api/queue/run": new Failure(503, "The agent isn't running."),
     }),
   );
   render(<Queue />);
   fireEvent.click(await screen.findByRole("button", { name: "Run the queue" }));
   expect((await screen.findByRole("alert")).textContent).toBe(
-    "The backend is down.",
+    "The agent isn't running.",
   );
 });
 

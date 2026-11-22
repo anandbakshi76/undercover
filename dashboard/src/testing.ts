@@ -103,6 +103,8 @@ export function claim(overrides: Partial<ClaimDetail> = {}): ClaimDetail {
     sign_off: null,
     payment: null,
     attempts: 0,
+    thread_id: null,
+    run_id: null,
     ...overrides,
   };
 }
