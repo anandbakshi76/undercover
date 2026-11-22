@@ -15,3 +15,9 @@ def fresh_backend(tmp_path, monkeypatch):
     client = TestClient(app)
     monkeypatch.setattr(main, "backend", lambda: nullcontext(client))
     monkeypatch.setattr(main, "RETRY_DELAY", 0)
+
+
+@pytest.fixture(autouse=True)
+def offline(monkeypatch):
+    for name in ["DATABASE_URL", "LANGFUSE_SECRET_KEY", "LANGFUSE_PUBLIC_KEY"]:
+        monkeypatch.delenv(name, raising=False)

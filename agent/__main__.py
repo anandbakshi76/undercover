@@ -2,6 +2,8 @@
 
 import argparse
 
+from dotenv import load_dotenv
+
 from agent import claim, main, queue_agent
 
 
@@ -25,4 +27,5 @@ def cli(argv: list[str] | None = None) -> str:
 
 
 if __name__ == "__main__":
+    load_dotenv(override=True)
     print(cli())

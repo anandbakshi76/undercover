@@ -103,7 +103,9 @@ def work_queue(run_id: str, llm: BaseChatModel) -> str:
     )
     claims = "claim" if limit == 1 else "claims"
     task = f"Work the queue. This run is capped at {limit} {claims}."
-    result = agent.invoke({"messages": [{"role": "user", "content": task}]})
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": task}]}, config=main.tracing(run_id)
+    )
     return result["messages"][-1].text
 
 

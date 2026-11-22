@@ -13,3 +13,8 @@ def fresh_db(tmp_path, monkeypatch):
 def client():
     with TestClient(app) as client:
         yield client
+
+
+@pytest.fixture(autouse=True)
+def offline(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)

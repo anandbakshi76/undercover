@@ -14,6 +14,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import tool
 
 from agent import main
+from backend.payout import Benefit, Line
 
 MODEL_CALL_LIMIT = 40
 MAX_ATTEMPTS = 2
@@ -62,6 +63,28 @@ def read_section(document: Document, section: str) -> tuple[Any, str | None]:
     return found, f"{found['name']} {found['section']}. {found['title']}"
 
 
+@tool(parse_docstring=True)
+def calculate_payout(
+    policy_id: str, benefit: Benefit, lines: list[Line], paid_by_others: float
+) -> Any:
+    """Work out the payout on an approved claim with UnderCover's payout rules.
+
+    Args:
+        policy_id: The customer's policy id
+        benefit: The benefit the claim is paid under
+        lines: The covered items and expenses, one for each line of the claim,
+            with any excluded ones left out. A pair or a set counts as one item
+        paid_by_others: Anything a carrier, hotel or other party has paid or
+            refunded for the same loss, or 0
+    """
+    body = {
+        "benefit": benefit,
+        "lines": [line.model_dump() for line in lines],
+        "paid_by_others": paid_by_others,
+    }
+    return main.call("POST", f"/api/policies/{policy_id}/payout", body)
+
+
 @tool
 def record_decision(
     claim_id: str,
@@ -93,6 +116,7 @@ TOOLS = [
     search_documents,
     list_sections,
     read_section,
+    calculate_payout,
     record_decision,
     pay_claim,
 ]
@@ -125,7 +149,7 @@ def decide(claim_id: str, thread_id: str, llm: BaseChatModel | None = None) -> s
     reply = ""
     for update in agent.stream(
         {"messages": [{"role": "user", "content": f"Decide claim {claim_id}."}]},
-        config={"configurable": {"thread_id": thread_id}},
+        config=main.tracing(thread_id) | {"configurable": {"thread_id": thread_id}},
         stream_mode="updates",
     ):
         for node in update.values():

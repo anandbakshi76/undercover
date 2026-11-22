@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from langchain_core.messages import AIMessage
@@ -33,6 +36,25 @@ def test_tools_call_the_backend():
     assert section["title"] == "Repeat claims"
     missing = tools.read_section.invoke({"document": "claims_manual", "section": "99"})
     assert missing["detail"].startswith("There is no section")
+    lines = [
+        {
+            "description": "Suitcase",
+            "amount": 400,
+            "quantity": 1,
+            "kind": "item",
+            "nights": 0,
+            "hours": 0,
+        }
+    ]
+    result = tools.calculate_payout.invoke(
+        {
+            "policy_id": "POL-2001",
+            "benefit": "baggage",
+            "lines": lines,
+            "paid_by_others": 0,
+        }
+    )
+    assert result["payout"] == 250.0
     assert tools.record_decision.invoke(decision("CLM-1001"))["status"] == "decided"
     paid = tools.pay_claim.invoke({"claim_id": "CLM-1001", "amount": 420.0})
     assert paid["payment"]["amount"] == 420.0
@@ -196,3 +218,56 @@ def test_the_agent_never_reads_the_data_folder():
         source = path.read_text(encoding="utf-8")
         assert "data/" not in source
         assert "evals" not in source
+
+
+def test_the_payout_tool_is_used_and_shown_as_a_step():
+    lines = [
+        {
+            "description": "Suitcase",
+            "amount": 400,
+            "quantity": 1,
+            "kind": "item",
+            "nights": 0,
+            "hours": 0,
+        }
+    ]
+    model = stub(
+        call_tool("get_claim", claim_id="CLM-1001"),
+        call_tool(
+            "calculate_payout",
+            policy_id="POL-2001",
+            benefit="baggage",
+            lines=lines,
+            paid_by_others=0,
+        ),
+        call_tool("record_decision", **decision("CLM-1001", payout=250.0)),
+        call_tool("pay_claim", claim_id="CLM-1001", amount=250.0),
+        AIMessage(content="Approved."),
+    )
+    assert claim_agent.work_claim(new_run(1), "CLM-1001", model).endswith("paid")
+    texts = [step["text"] for step in recorded_steps("CLM-1001")]
+    assert any(t.startswith("calculate_payout: ") and "250.0" in t for t in texts)
+
+
+def test_tracing_needs_langfuse_keys(monkeypatch):
+    assert main.tracing("T-1") == {}
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+    config = main.tracing("T-1")
+    assert config.get("metadata") == {"langfuse_session_id": "T-1"}
+    callbacks = config.get("callbacks")
+    assert isinstance(callbacks, list)
+    assert len(callbacks) == 1
+
+
+def test_importing_the_agent_does_not_load_env():
+    code = "import os, agent.main; print(os.getenv('LANGFUSE_SECRET_KEY'))"
+    env = {k: v for k, v in os.environ.items() if not k.startswith("LANGFUSE")}
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert result.stdout.strip() == "None", result.stderr

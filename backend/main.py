@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from agent import claim as claim_agent
 from agent import queue_agent
-from backend import db, documents
+from backend import db, documents, payout
 
 INSTRUCTIONS = Path(__file__).resolve().parent / "instructions"
 
@@ -118,6 +118,16 @@ def get_policy(policy_id: str) -> dict[str, Any]:
         "deductible_applies_to": plans["deductible_applies_to"],
         "add_on_details": add_ons,
     }
+
+
+@app.post("/api/policies/{policy_id}/payout", operation_id="calculate_payout")
+def calculate_payout(policy_id: str, request: payout.PayoutRequest) -> dict[str, Any]:
+    """Work out the payout on an approved claim with UnderCover's payout rules."""
+    with db.connect() as connection:
+        policy = record(connection, "policy", policy_id)
+        plans = record(connection, "settings", "plans")
+        limit = approval_limit(connection)
+    return dict(payout.work_out_payout(policy, plans, limit, request))
 
 
 @app.get("/api/customers/{customer_id}/claims", operation_id="get_claim_history")

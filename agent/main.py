@@ -5,12 +5,10 @@ import os
 from typing import Any
 
 import httpx
-from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
-
-load_dotenv(override=True)
 
 BACKEND_URL = "http://127.0.0.1:8000"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -44,6 +42,18 @@ def model() -> ChatOpenAI:
         reasoning_effort=None if name else "low",
         timeout=MODEL_TIMEOUT,
     )
+
+
+def tracing(session_id: str) -> RunnableConfig:
+    """Trace a run in Langfuse under a session, if the Langfuse keys are set."""
+    if not os.getenv("LANGFUSE_SECRET_KEY"):
+        return {}
+    from langfuse.langchain import CallbackHandler  # noqa: PLC0415
+
+    return {
+        "callbacks": [CallbackHandler()],
+        "metadata": {"langfuse_session_id": session_id},
+    }
 
 
 def steps(message: BaseMessage) -> list[tuple[str, str]]:

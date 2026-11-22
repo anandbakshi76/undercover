@@ -37,7 +37,7 @@ Follow section 2 of the manual.
 
 ## Working out the payout
 
-Follow section 10 of the wording and section 6 of the manual, in that order: the eligible amount of each line, less anything another party paid, less the deductible where it applies, capped at the benefit's maximum. Use the limits on the policy's plan and add-ons. Round to the cent. A decline or a refer has a payout of 0. Amounts are in US dollars.
+Follow section 10 of the wording and section 6 of the manual to decide which lines are covered, what counts as one item and what another party paid. Then call `calculate_payout` with the policy id, the benefit, one line for each covered item or expense and what others paid, and record the payout it returns. It applies the limits, the deductible and the benefit's maximum, and rounds to the cent: do not work out the amount yourself. A decline or a refer has a payout of 0. Amounts are in US dollars.
 
 ## Recording the decision
 
