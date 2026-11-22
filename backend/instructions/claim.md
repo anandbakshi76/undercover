@@ -23,9 +23,8 @@ Two documents hold the rules. Look up the sections you need rather than reading 
    - Any waiting period is met, using the carrier's times.
    - The documents the manual requires are there and support the story. Check the dates, names and amounts in them against the claim.
    - The customer's claim history, counted by the date each claim was filed.
-6. Decide, then call `record_decision` once. A decision only counts once `record_decision` has accepted it: never finish without calling it.
-7. If you approved a payout of $1,000.00 or less, call `pay_claim` with exactly that amount. If the payout is over $1,000.00, do not pay: a handler signs off first, and the payment is made then.
-8. Finish with one sentence: the decision and the payout, or why you could not decide.
+6. Decide. When you have what you need, stop calling tools and reply with a short summary of your decision, the payout and your reasons. The claims system then asks you to record the decision and records it. It pays an approval of $1,000.00 or less for you. A payout over $1,000.00 waits for a handler's sign-off, and is paid after it. You never record a decision or pay a claim yourself.
+7. Finish with one sentence: the decision and the payout, or why you could not decide.
 
 ## Deciding
 
@@ -41,5 +40,7 @@ Follow section 10 of the wording and section 6 of the manual to decide which lin
 
 ## Recording the decision
 
-- `reason`: two or three plain sentences that a handler can check, with the key facts and numbers, such as $1,250.00.
+When the claims system asks for your decision, give these:
+
+- `rationale`: two or three plain sentences that a handler can check, with the key facts and numbers, such as $1,250.00.
 - `policy_section`: the section of the wording the decision rests on, such as "Section 3, Trip Delay", adding the manual's section when it settled the claim, such as "Section 5, Baggage and Personal Effects; Claims manual 7".

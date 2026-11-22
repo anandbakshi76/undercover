@@ -20,11 +20,13 @@ def decline(claim_id, thread_id):
 def runs(monkeypatch):
     seen = []
 
-    def fake_work(run_id, claim_id):
+    def fake_work(claim_id):
+        with db.connect() as connection:
+            run_id = main.claim_row(connection, claim_id)["run_id"]
         seen.append((run_id, claim_id))
         decline(claim_id, run_id)
 
-    monkeypatch.setattr(main.claim_agent, "work_started", fake_work)
+    monkeypatch.setattr(main.claim_agent, "carry_on", fake_work)
     return seen
 
 
@@ -108,7 +110,8 @@ def test_steps_from_every_attempt_are_kept(client):
 def test_starting_a_claim_needs_a_waiting_claim_and_a_running_run(client):
     run_id = new_run(client, 3)
     start(client, run_id, "CLM-1001")
-    assert start(client, run_id, "CLM-1001").status_code == 409
+    other_run = new_run(client, 3)
+    assert start(client, other_run, "CLM-1001").status_code == 409
     client.post(
         f"/api/runs/{run_id}/finish", json={"status": "finished", "summary": "Done."}
     )
@@ -244,3 +247,32 @@ def test_the_instructions_cover_the_queue_and_a_claim(client):
 def test_run_queue_needs_a_cap_of_at_least_one(client, runs):
     assert client.post("/api/queue/run", json={"limit": 0}).status_code == 422
     assert runs == []
+
+
+def test_starting_a_claim_gives_it_a_thread_and_a_repeat_start_returns_it(client):
+    run_id = new_run(client, 1)
+    first = start(client, run_id, "CLM-1001").json()
+    assert first["thread_id"] == f"CLM-1001-{run_id}-1"
+    again = start(client, run_id, "CLM-1001")
+    assert again.status_code == 200
+    assert again.json()["thread_id"] == first["thread_id"]
+    assert client.get(f"/api/runs/{run_id}").json()["claims_worked"] == ["CLM-1001"]
+    release(client, "CLM-1001")
+    assert start(client, run_id, "CLM-1001").json()["thread_id"].endswith("-2")
+
+
+def test_releasing_an_approved_claim_changes_nothing(client):
+    run_id = new_run(client, 1)
+    start(client, run_id, "CLM-1001")
+    client.post(
+        "/api/claims/CLM-1001/decision",
+        json={
+            "decision": "approve",
+            "payout": 420.0,
+            "reason": "Covered.",
+            "policy_section": "Section 3",
+        },
+    )
+    claim = release(client, "CLM-1001").json()
+    assert claim["status"] == "in_progress"
+    assert claim["attempts"] == 0

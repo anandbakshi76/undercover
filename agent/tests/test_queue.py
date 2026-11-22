@@ -6,7 +6,6 @@ from agent.tests.stubs import approve_and_pay, call_tool, claim, new_run, stub
 from backend import main as backend
 
 ERROR = RuntimeError("model unavailable")
-NO_DECISION = AIMessage(content="Hello.")
 
 
 def todos(*items):
@@ -100,7 +99,9 @@ def test_a_failed_claim_is_tried_again_and_decided():
     run_id = new_run(1)
     model = stub(
         work("CLM-1001"),
-        NO_DECISION,
+        ERROR,
+        ERROR,
+        ERROR,
         work("CLM-1001"),
         *approve_and_pay("CLM-1001"),
         AIMessage(content="Approved on the second try."),
@@ -115,9 +116,13 @@ def test_a_claim_that_fails_twice_is_left_for_a_handler():
     run_id = new_run(1)
     model = stub(
         work("CLM-1001"),
-        NO_DECISION,
+        ERROR,
+        ERROR,
+        ERROR,
         work("CLM-1001"),
-        NO_DECISION,
+        ERROR,
+        ERROR,
+        ERROR,
         todos(("Work CLM-1001", "left_for_handler")),
         AIMessage(content="CLM-1001 is left for a handler."),
     )

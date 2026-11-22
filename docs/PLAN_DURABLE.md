@@ -145,17 +145,17 @@ Retries move from middleware to LangGraph's `RetryPolicy` on the nodes: the mode
 
 **Success criteria** (pytest with stub models and `InMemorySaver`, never a real model or database)
 
-- [ ] An approval of $420.00 runs agent → tools → decide → pay: the claim is `decided` and paid once, the steps include the tool calls, the decision and the payment, and the line is "CLM-1001: approved, $420.00 paid"
-- [ ] The pause: an approval of $2,240.00 leaves the claim `awaiting_sign_off` with no payment, and the graph's state on the claim's thread has `next == ("wait_for_sign_off",)` and an interrupt with the claim id and payout
-- [ ] A decline ends without a payment; a refusal from `record_decision` goes back to the model, which decides again
-- [ ] Stop and carry on: a stub that raises `KeyboardInterrupt` after the claim's first tool calls leaves the claim `in_progress` with `attempts` 0. A new graph on the same checkpointer carries on from the last checkpoint on the same thread (the model isn't asked again for the steps already done), and the claim ends with one decision and `attempts` still 0
-- [ ] A rerun of `decide` on a claim that already has a decision takes the recorded one without calling the model
-- [ ] A stub that raises an error releases the claim to `waiting` with `attempts` 1, and its next attempt runs on a new, empty thread
-- [ ] A stub that keeps calling tools fails at 30 model calls and is released
-- [ ] Backend: an approval at or under the limit is `in_progress` until `pay_claim`, then `decided`; `sign_off` makes the claim `in_progress` with no payment; paying over the limit without a sign-off is still refused; releasing a decided claim changes nothing
-- [ ] `checkpointer()` is `InMemorySaver` without `DATABASE_URL`; with it, the pool has `max_size=4` and the three settings (checked without connecting)
-- [ ] The claim agent's tools are the seven read and lookup tools, and nothing under `agent/` refers to `data/`
-- [ ] `npm run check:python` passes with coverage of 80% or more
+- [x] An approval of $420.00 runs agent → tools → decide → pay: the claim is `decided` and paid once, the steps include the tool calls, the decision and the payment, and the line is "CLM-1001: approved, $420.00 paid"
+- [x] The pause: an approval of $2,240.00 leaves the claim `awaiting_sign_off` with no payment, and the graph's state on the claim's thread has `next == ("wait_for_sign_off",)` and an interrupt with the claim id and payout
+- [x] A decline ends without a payment; a refusal from `record_decision` goes back to the model, which decides again
+- [x] Stop and carry on: a stub that raises `KeyboardInterrupt` after the claim's first tool calls leaves the claim `in_progress` with `attempts` 0. A new graph on the same checkpointer carries on from the last checkpoint on the same thread (the model isn't asked again for the steps already done), and the claim ends with one decision and `attempts` still 0
+- [x] A rerun of `decide` on a claim that already has a decision takes the recorded one without calling the model
+- [x] A stub that raises an error releases the claim to `waiting` with `attempts` 1, and its next attempt runs on a new, empty thread
+- [x] A stub that keeps calling tools fails at 30 model calls and is released
+- [x] Backend: an approval at or under the limit is `in_progress` until `pay_claim`, then `decided`; `sign_off` makes the claim `in_progress` with no payment; paying over the limit without a sign-off is still refused; releasing a decided claim changes nothing
+- [x] `checkpointer()` is `InMemorySaver` without `DATABASE_URL`; with it, the pool has `max_size=4` and the three settings (checked without connecting)
+- [x] The claim agent's tools are the seven read and lookup tools, and nothing under `agent/` refers to `data/`
+- [x] `npm run check:python` passes with coverage of 80% or more
 
 ## Phase 4: The agent's service, sign-off and carrying on
 

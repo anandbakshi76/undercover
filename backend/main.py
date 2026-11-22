@@ -70,7 +70,12 @@ def claim_view(row: Row) -> dict[str, Any]:
         }
     payment = None
     if row["paid_amount"] is not None:
-        payment = {"amount": row["paid_amount"], "paid_at": row["paid_at"]}
+        payment = {
+            "amount": row["paid_amount"],
+            "paid_at": row["paid_at"],
+            "signed_off_by": row["signed_off_by"],
+            "signed_off_at": row["signed_off_at"],
+        }
     return {
         **json.loads(row["data"]),
         "status": row["status"],
@@ -78,6 +83,7 @@ def claim_view(row: Row) -> dict[str, Any]:
         "sign_off": sign_off,
         "payment": payment,
         "attempts": row["attempts"],
+        "thread_id": row["thread_id"],
     }
 
 
@@ -269,7 +275,7 @@ def pay(connection: Connection, row: Row, amount: float) -> None:
     connection.execute(
         update(claims)
         .where(claims.c.claim_id == row["claim_id"], claims.c.paid_amount.is_(None))
-        .values(paid_amount=round(amount, 2), paid_at=now())
+        .values(paid_amount=round(amount, 2), paid_at=now(), status="decided")
     )
 
 
@@ -313,15 +319,17 @@ def record_decision(claim_id: str, decision: Decision) -> dict[str, Any]:
     with db.connect() as connection:
         row = claim_row(connection, claim_id)
         if row["decision"] is None:
-            over_limit = (
-                decision.decision == "approve"
-                and decision.payout > approval_limit(connection)
-            )
+            approved = decision.decision == "approve"
+            over_limit = approved and decision.payout > approval_limit(connection)
+            if over_limit:
+                status = "awaiting_sign_off"
+            else:
+                status = "in_progress" if approved else "decided"
             recorded = connection.execute(
                 update(claims)
                 .where(claims.c.claim_id == claim_id, claims.c.decision.is_(None))
                 .values(
-                    status="awaiting_sign_off" if over_limit else "decided",
+                    status=status,
                     decision=decision.decision,
                     payout=round(decision.payout, 2),
                     reason=decision.reason,
@@ -347,7 +355,7 @@ def pay_claim(claim_id: str, payment: Payment) -> dict[str, Any]:
 
 @app.post("/api/claims/{claim_id}/sign-off", operation_id="sign_off")
 def sign_off(claim_id: str, sign_off: SignOff) -> dict[str, Any]:
-    """Sign off an approval over the limit as a handler, which pays the claim."""
+    """Sign off an approval over the limit as a handler, so the agent can pay it."""
     with db.connect() as connection:
         handler = record(connection, "handler", sign_off.handler_id)
         if not handler["can_approve_over_limit"]:
@@ -359,13 +367,11 @@ def sign_off(claim_id: str, sign_off: SignOff) -> dict[str, Any]:
             update(claims)
             .where(claims.c.claim_id == claim_id)
             .values(
-                status="decided",
+                status="in_progress",
                 signed_off_by=sign_off.handler_id,
                 signed_off_at=now(),
             )
         )
-        row = claim_row(connection, claim_id)
-        pay(connection, row, row["payout"])
         return claim_view(claim_row(connection, claim_id))
 
 
@@ -473,6 +479,8 @@ def start(connection: Connection, run_id: str, claim_id: str) -> None:
     if run["status"] != "running":
         raise HTTPException(409, f"Run {run_id} has finished.")
     row = claim_row(connection, claim_id)
+    if row["status"] == "in_progress" and row["run_id"] == run_id:
+        return
     if row["status"] == "needs_handler":
         raise HTTPException(409, f"Claim {claim_id} is left for a handler.")
     worked = worked_ids(connection, run_id)
@@ -486,7 +494,11 @@ def start(connection: Connection, run_id: str, claim_id: str) -> None:
     started = connection.execute(
         update(claims)
         .where(claims.c.claim_id == claim_id, claims.c.status == "waiting")
-        .values(status="in_progress", run_id=run_id)
+        .values(
+            status="in_progress",
+            run_id=run_id,
+            thread_id=f"{claim_id}-{run_id}-{row['attempts'] + 1}",
+        )
     ).rowcount
     if not started:
         raise HTTPException(409, f"Claim {claim_id} is not waiting.")
@@ -496,7 +508,7 @@ def start(connection: Connection, run_id: str, claim_id: str) -> None:
 
 def release(connection: Connection, claim_id: str, problem: str) -> None:
     row = claim_row(connection, claim_id)
-    if row["status"] != "in_progress":
+    if row["status"] != "in_progress" or row["decision"] is not None:
         return
     attempts = row["attempts"] + 1
     if attempts >= MAX_ATTEMPTS:
@@ -623,7 +635,7 @@ def release_claim(claim_id: str, release_input: Release) -> dict[str, Any]:
 
 
 def work_one(run_id: str, claim_id: str) -> None:
-    claim_agent.work_started(run_id, claim_id)
+    claim_agent.carry_on(claim_id)
     with db.connect() as connection:
         end_run(connection, run_id, RunEnd(status="finished", summary=""))
 

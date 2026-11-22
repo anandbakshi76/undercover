@@ -60,6 +60,7 @@ claims = Table(
     Column("paid_at", Text),
     Column("attempts", Integer, nullable=False, server_default="0"),
     Column("run_id", Text),
+    Column("thread_id", Text),
 )
 runs = Table(
     "runs",

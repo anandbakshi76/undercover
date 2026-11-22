@@ -18,7 +18,7 @@ class StubModel(GenericFakeChatModel):
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         self.seen.append(messages)
         reply = next(self.messages)
-        if isinstance(reply, Exception):
+        if isinstance(reply, BaseException):
             raise reply
         self.messages = iter([reply, *self.messages])
         return super()._generate(messages, stop, run_manager, **kwargs)
@@ -43,13 +43,24 @@ def decision(claim_id, kind="approve", payout=420.0):
     }
 
 
+def decide(claim_id, kind="approve", payout=420.0):
+    """The model's reply when the graph asks it to record its decision."""
+    made = decision(claim_id, kind, payout)
+    return call_tool(
+        "ClaimDecision",
+        rationale=made["reason"],
+        decision=kind,
+        payout=made["payout"],
+        policy_section=made["policy_section"],
+    )
+
+
 def approve_and_pay(claim_id, payout=420.0):
-    """The replies of a claim agent that approves a claim and pays it."""
+    """The replies of a claim agent that looks the claim up, then approves it."""
     return [
         call_tool("get_claim", claim_id=claim_id),
-        call_tool("record_decision", **decision(claim_id, payout=payout)),
-        call_tool("pay_claim", claim_id=claim_id, amount=payout),
-        AIMessage(content=f"Approved {claim_id}."),
+        AIMessage(content=f"Approve {claim_id}."),
+        decide(claim_id, payout=payout),
     ]
 
 

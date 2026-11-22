@@ -25,13 +25,14 @@ def sign_off(client, claim_id, handler_id="HND-01"):
     )
 
 
-def test_approval_within_the_limit_is_decided_and_can_be_paid(client):
+def test_approval_within_the_limit_is_in_progress_until_it_is_paid(client):
     claim = decide(client, "CLM-1001").json()
-    assert claim["status"] == "decided"
+    assert claim["status"] == "in_progress"
     assert claim["decision"]["payout"] == 420.0
     assert claim["decision"]["policy_section"] == "Section 3, Trip Delay"
     paid = pay(client, "CLM-1001", 420.0).json()
     assert paid["payment"]["amount"] == 420.0
+    assert paid["status"] == "decided"
 
 
 def test_approval_over_the_limit_waits_and_blocks_payment(client):
@@ -45,12 +46,17 @@ def test_approval_over_the_limit_waits_and_blocks_payment(client):
     assert client.get("/api/claims/CLM-1002").json()["payment"] is None
 
 
-def test_sign_off_pays_once_and_decides(client):
+def test_sign_off_records_who_and_when_and_leaves_the_payment_to_the_agent(client):
     decide(client, "CLM-1002", payout=1250.0)
     claim = sign_off(client, "CLM-1002").json()
-    assert claim["status"] == "decided"
+    assert claim["status"] == "in_progress"
     assert claim["sign_off"]["handler_id"] == "HND-01"
-    assert claim["payment"]["amount"] == 1250.0
+    assert claim["payment"] is None
+    paid = pay(client, "CLM-1002", 1250.0).json()
+    assert paid["status"] == "decided"
+    assert paid["payment"]["signed_off_by"] == "HND-01"
+    assert paid["payment"]["signed_off_at"] == claim["sign_off"]["signed_off_at"]
+    assert pay(client, "CLM-1002", 1250.0).json()["payment"] == paid["payment"]
 
 
 @pytest.mark.parametrize("decision", ["decline", "refer"])

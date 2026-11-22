@@ -3,15 +3,19 @@ import subprocess
 import sys
 from pathlib import Path
 
-from langchain_core.messages import AIMessage
+import pytest
+from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
+from psycopg.rows import dict_row
 
+from agent import checkpoints, main
 from agent import claim as claim_agent
-from agent import main
 from agent.__main__ import cli
 from agent.tests.stubs import (
     approve_and_pay,
     call_tool,
     claim,
+    decide,
     decision,
     new_run,
     recorded_steps,
@@ -20,6 +24,28 @@ from agent.tests.stubs import (
 from backend import main as backend
 
 ERROR = RuntimeError("model unavailable")
+LINES = [
+    {
+        "description": "Suitcase",
+        "amount": 400,
+        "quantity": 1,
+        "kind": "item",
+        "nights": 0,
+        "hours": 0,
+    }
+]
+
+
+def graph_state(claim_id, saver):
+    thread_id = claim(claim_id)["thread_id"]
+    graph = claim_agent.claim_graph(stub(), saver, "Instructions.")
+    return graph.get_state({"configurable": {"thread_id": thread_id}})
+
+
+def sign_off(claim_id, handler_id="HND-01"):
+    return main.call(
+        "POST", f"/api/claims/{claim_id}/sign-off", {"handler_id": handler_id}
+    )
 
 
 def test_tools_call_the_backend():
@@ -36,28 +62,18 @@ def test_tools_call_the_backend():
     assert section["title"] == "Repeat claims"
     missing = tools.read_section.invoke({"document": "claims_manual", "section": "99"})
     assert missing["detail"].startswith("There is no section")
-    lines = [
-        {
-            "description": "Suitcase",
-            "amount": 400,
-            "quantity": 1,
-            "kind": "item",
-            "nights": 0,
-            "hours": 0,
-        }
-    ]
     result = tools.calculate_payout.invoke(
         {
             "policy_id": "POL-2001",
             "benefit": "baggage",
-            "lines": lines,
+            "lines": LINES,
             "paid_by_others": 0,
         }
     )
     assert result["payout"] == 250.0
-    assert tools.record_decision.invoke(decision("CLM-1001"))["status"] == "decided"
-    paid = tools.pay_claim.invoke({"claim_id": "CLM-1001", "amount": 420.0})
-    assert paid["payment"]["amount"] == 420.0
+    assert not hasattr(tools, "record_decision")
+    assert not hasattr(tools, "pay_claim")
+    assert len(tools.TOOLS) == 7
 
 
 def test_a_claim_is_looked_up_decided_and_paid():
@@ -65,9 +81,8 @@ def test_a_claim_is_looked_up_decided_and_paid():
         call_tool("get_claim", claim_id="CLM-1001"),
         call_tool("search_documents", text="repeat claims"),
         call_tool("read_section", document="claims_manual", section="9"),
-        call_tool("record_decision", **decision("CLM-1001")),
-        call_tool("pay_claim", claim_id="CLM-1001", amount=420.0),
-        AIMessage(content="Approved and paid $420.00."),
+        AIMessage(content="Approve $420.00."),
+        decide("CLM-1001"),
     )
     line = claim_agent.work_claim(new_run(1), "CLM-1001", model)
     assert line == "CLM-1001: approved, $420.00 paid"
@@ -77,48 +92,148 @@ def test_a_claim_is_looked_up_decided_and_paid():
     steps = recorded_steps("CLM-1001")
     sections = [step["text"] for step in steps if step["kind"] == "section"]
     assert sections == ["Claims manual 9. Repeat claims"]
-    assert steps[-1] == steps[-1] | {"kind": "reply"}
+    texts = [step["text"] for step in steps]
+    assert texts.index('get_claim({"claim_id": "CLM-1001"})') == 0
+    calls = [t for t in texts if t.startswith(("record_decision(", "pay_claim("))]
+    assert [t.split("(")[0] for t in calls] == ["record_decision", "pay_claim"]
+    assert texts[-1] == "pay_claim: paid $420.00"
+
+
+def test_the_payout_tool_is_used_and_shown_as_a_step():
+    model = stub(
+        call_tool("get_claim", claim_id="CLM-1001"),
+        call_tool(
+            "calculate_payout",
+            policy_id="POL-2001",
+            benefit="baggage",
+            lines=LINES,
+            paid_by_others=0,
+        ),
+        AIMessage(content="Approve $250.00."),
+        decide("CLM-1001", payout=250.0),
+    )
+    assert claim_agent.work_claim(new_run(1), "CLM-1001", model).endswith("paid")
+    texts = [step["text"] for step in recorded_steps("CLM-1001")]
+    assert any(t.startswith("calculate_payout: ") and "250.0" in t for t in texts)
 
 
 def test_a_section_that_does_not_exist_is_not_recorded_as_read():
     model = stub(
         call_tool("read_section", document="claims_manual", section="99"),
         AIMessage(content="Nothing there."),
+        decide("CLM-1001", "refer"),
     )
-    claim_agent.decide("CLM-1001", "t1", model)
+    claim_agent.work_claim(new_run(1), "CLM-1001", model)
     assert "section" not in [step["kind"] for step in recorded_steps("CLM-1001")]
 
 
-def test_a_payout_over_the_limit_waits_for_sign_off():
+def test_a_payout_over_the_limit_pauses_for_sign_off():
+    saver = InMemorySaver()
     model = stub(*approve_and_pay("CLM-1002", payout=1250.0))
-    line = claim_agent.work_claim(new_run(1), "CLM-1002", model)
+    line = claim_agent.work_claim(new_run(1), "CLM-1002", model, saver)
     assert line == "CLM-1002: approved $1,250.00, waiting for sign-off"
-    assert claim("CLM-1002")["payment"] is None
-    refusal = [s for s in recorded_steps("CLM-1002") if "pay_claim:" in s["text"]]
-    assert "needs a handler's sign-off" in refusal[0]["text"]
+    held = claim("CLM-1002")
+    assert held["status"] == "awaiting_sign_off"
+    assert held["payment"] is None
+    state = graph_state("CLM-1002", saver)
+    assert state.next == ("wait_for_sign_off",)
+    paused = state.interrupts[0].value
+    assert paused["claim_id"] == "CLM-1002"
+    assert paused["payout"] == 1250.0
+    last = recorded_steps("CLM-1002")[-1]
+    assert last["text"] == "The payout of $1,250.00 waits for a handler's sign-off."
+
+
+def test_a_sign_off_resumes_the_claim_and_pays_it_once():
+    saver = InMemorySaver()
+    claim_agent.work_claim(
+        new_run(1), "CLM-1002", stub(*approve_and_pay("CLM-1002", 1250.0)), saver
+    )
+    assert claim_agent.carry_on("CLM-1002", stub(), saver).endswith("sign-off")
+    assert claim("CLM-1002")["status"] == "awaiting_sign_off"
+    signed = sign_off("CLM-1002")
+    assert signed["status"] == "in_progress"
+    assert signed["payment"] is None
+    model = stub()
+    assert claim_agent.carry_on("CLM-1002", model, saver) == (
+        "CLM-1002: approved, $1,250.00 paid"
+    )
+    assert not model.seen
+    paid = claim("CLM-1002")
+    assert paid["status"] == "decided"
+    assert paid["payment"]["amount"] == 1250.0
+    assert paid["payment"]["signed_off_by"] == "HND-01"
+    assert paid["payment"]["signed_off_at"] == paid["sign_off"]["signed_off_at"]
+    texts = [step["text"] for step in recorded_steps("CLM-1002")]
+    assert "Signed off by Dana Whitfield." in texts
+    again = claim_agent.carry_on("CLM-1002", stub(), saver)
+    assert again == "CLM-1002: approved, $1,250.00 paid"
+    assert claim("CLM-1002")["payment"] == paid["payment"]
+    assert len([t for t in texts if t.startswith("pay_claim(")]) == 1
 
 
 def test_declines_and_referrals_are_reported():
     run_id = new_run(2)
-    declined = stub(
-        call_tool("record_decision", **decision("CLM-1001", "decline")),
-        AIMessage(content="Declined."),
-    )
-    referred = stub(
-        call_tool("record_decision", **decision("CLM-1002", "refer")),
-        AIMessage(content="Referred."),
-    )
+    declined = stub(AIMessage(content="No."), decide("CLM-1001", "decline"))
+    referred = stub(AIMessage(content="Hmm."), decide("CLM-1002", "refer"))
     assert claim_agent.work_claim(run_id, "CLM-1001", declined) == "CLM-1001: declined"
     assert claim_agent.work_claim(run_id, "CLM-1002", referred) == "CLM-1002: referred"
+    assert claim("CLM-1001")["payment"] is None
 
 
-def test_an_approval_left_unpaid_is_reported():
+def test_a_refused_decision_goes_back_to_the_model():
+    bad = call_tool(
+        "ClaimDecision",
+        rationale="No.",
+        decision="decline",
+        payout=50,
+        policy_section="Section 3, Trip Delay",
+    )
     model = stub(
-        call_tool("record_decision", **decision("CLM-1001")),
-        AIMessage(content="Approved."),
+        AIMessage(content="Decline."),
+        bad,
+        AIMessage(content="Fixing the payout."),
+        decide("CLM-1001", "decline"),
     )
     line = claim_agent.work_claim(new_run(1), "CLM-1001", model)
-    assert line == "CLM-1001: approved $420.00, not paid"
+    assert line == "CLM-1001: declined"
+    texts = [step["text"] for step in recorded_steps("CLM-1001")]
+    assert "record_decision: A decline or a refer has a payout of 0." in texts
+    told = [m for m in model.seen[2] if isinstance(m, HumanMessage)]
+    assert "refused your decision" in told[-1].content
+
+
+def test_a_decision_already_recorded_is_taken_without_asking_the_model():
+    run_id = new_run(1)
+    main.call("POST", "/api/claims/CLM-1001/start", {"run_id": run_id})
+    main.call("POST", "/api/claims/CLM-1001/decision", decision("CLM-1001"))
+    model = stub(AIMessage(content="Looked it up."))
+    line = claim_agent.carry_on("CLM-1001", model, InMemorySaver())
+    assert line == "CLM-1001: approved, $420.00 paid"
+    assert len(model.seen) == 1
+    assert len(main.call("GET", "/api/claims/CLM-1001/steps")) == 3
+
+
+def test_a_stopped_claim_carries_on_from_its_last_step():
+    saver = InMemorySaver()
+    run_id = new_run(1)
+    first = stub(call_tool("get_claim", claim_id="CLM-1001"), KeyboardInterrupt())
+    with pytest.raises(KeyboardInterrupt):
+        claim_agent.work_claim(run_id, "CLM-1001", first, saver)
+    stopped = claim("CLM-1001")
+    assert stopped["status"] == "in_progress"
+    assert stopped["attempts"] == 0
+    second = stub(AIMessage(content="Approve $420.00."), decide("CLM-1001"))
+    line = claim_agent.carry_on("CLM-1001", second, saver)
+    assert line == "CLM-1001: approved, $420.00 paid"
+    assert len(second.seen) == 2
+    assert any(m.type == "tool" for m in second.seen[0])
+    done = claim("CLM-1001")
+    assert done["attempts"] == 0
+    assert done["thread_id"] == stopped["thread_id"]
+    kinds = [s["text"].split("(")[0] for s in recorded_steps("CLM-1001")]
+    assert kinds.count("record_decision") == 1
+    assert kinds.count("get_claim") == 1
 
 
 def test_a_model_error_is_retried():
@@ -140,60 +255,67 @@ def test_a_failing_model_puts_the_claim_back():
     assert "model unavailable" in error["text"]
 
 
-def test_a_run_without_a_decision_puts_the_claim_back():
-    line = claim_agent.work_claim(new_run(1), "CLM-1001", stub(AIMessage("Hello.")))
-    assert line.startswith("CLM-1001: failed, back in the queue")
-    assert line.endswith("The agent finished without recording a decision.")
-    assert claim("CLM-1001")["status"] == "waiting"
-
-
 def test_a_second_failure_leaves_the_claim_for_a_handler():
     run_id = new_run(1)
-    claim_agent.work_claim(run_id, "CLM-1001", stub(AIMessage("Hello.")))
-    line = claim_agent.work_claim(run_id, "CLM-1001", stub(AIMessage("Hello.")))
+    claim_agent.work_claim(run_id, "CLM-1001", stub(ERROR, ERROR, ERROR))
+    line = claim_agent.work_claim(run_id, "CLM-1001", stub(ERROR, ERROR, ERROR))
     assert line.startswith("CLM-1001: failed twice, left for a handler.")
     assert claim("CLM-1001")["status"] == "needs_handler"
 
 
+def test_each_attempt_gets_a_new_thread_and_a_clean_conversation():
+    saver = InMemorySaver()
+    run_id = new_run(1)
+    claim_agent.work_claim(run_id, "CLM-1001", stub(ERROR, ERROR, ERROR), saver)
+    first_thread = claim("CLM-1001")["thread_id"]
+    model = stub(*approve_and_pay("CLM-1001"))
+    claim_agent.work_claim(run_id, "CLM-1001", model, saver)
+    second_thread = claim("CLM-1001")["thread_id"]
+    assert first_thread == f"CLM-1001-{run_id}-1"
+    assert second_thread == f"CLM-1001-{run_id}-2"
+    assert [message.type for message in model.seen[0]] == ["system", "human"]
+    assert claim("CLM-1001")["status"] == "decided"
+
+
 def test_a_looping_agent_is_stopped(monkeypatch):
+    assert claim_agent.MODEL_CALL_LIMIT == 30
     monkeypatch.setattr(claim_agent, "MODEL_CALL_LIMIT", 3)
     loop = [call_tool("get_claim", claim_id="CLM-1001") for _ in range(10)]
     line = claim_agent.work_claim(new_run(1), "CLM-1001", stub(*loop))
     assert line.startswith("CLM-1001: failed, back in the queue")
-    assert "limit" in line.lower()
+    assert "3 model calls" in line
 
 
-def test_each_attempt_starts_from_a_clean_conversation():
-    model = stub(AIMessage("Hello."), *approve_and_pay("CLM-1001"))
-    run_id = new_run(1)
-    claim_agent.work_claim(run_id, "CLM-1001", model)
-    claim_agent.work_claim(run_id, "CLM-1001", model)
-    second_attempt = model.seen[1]
-    assert [message.type for message in second_attempt] == ["system", "human"]
-    assert claim("CLM-1001")["status"] == "decided"
-
-
-def test_a_decided_claim_is_never_decided_or_paid_twice():
-    model = stub(
-        call_tool("record_decision", **decision("CLM-1001")),
-        call_tool("record_decision", **decision("CLM-1001", "decline")),
-        AIMessage(content="Done."),
-    )
-    claim_agent.decide("CLM-1001", "t1", model)
-    refusal = [s for s in recorded_steps("CLM-1001") if s["kind"] == "tool_result"][1]
-    assert "has already been decided" in refusal["text"]
-    assert claim("CLM-1001")["decision"]["decision"] == "approve"
+def test_a_claim_is_never_decided_or_paid_twice():
+    model = stub(*approve_and_pay("CLM-1001"))
+    claim_agent.work_claim(new_run(1), "CLM-1001", model)
     line = claim_agent.work_claim(new_run(1), "CLM-1001", stub())
     assert line == "CLM-1001: not started. Claim CLM-1001 is not waiting."
+    assert claim("CLM-1001")["payment"]["amount"] == 420.0
 
 
 def test_instructions_come_from_the_backend(tmp_path, monkeypatch):
     (tmp_path / "claim.md").write_text("Decide claims carefully.", encoding="utf-8")
     (tmp_path / "queue.md").write_text("Run the queue.", encoding="utf-8")
     monkeypatch.setattr(backend, "INSTRUCTIONS", tmp_path)
-    model = stub(AIMessage(content="Done."))
-    claim_agent.decide("CLM-1001", "t1", model)
+    model = stub(*approve_and_pay("CLM-1001"))
+    claim_agent.work_claim(new_run(1), "CLM-1001", model)
     assert model.seen[0][0].content == "Decide claims carefully."
+
+
+def test_the_checkpointer_is_in_memory_without_a_database_url():
+    checkpoints.checkpointer.cache_clear()
+    assert isinstance(checkpoints.checkpointer(), InMemorySaver)
+
+
+def test_the_pool_keeps_to_four_connections_with_langgraphs_settings():
+    pool = checkpoints.make_pool("postgresql://u:p@db.example.com:5432/postgres")
+    assert pool.max_size == 4
+    assert pool.kwargs == checkpoints.SETTINGS
+    assert checkpoints.SETTINGS["autocommit"] is True
+    assert checkpoints.SETTINGS["prepare_threshold"] == 0
+    assert checkpoints.SETTINGS["options"] == "-c search_path=undercover"
+    assert checkpoints.SETTINGS["row_factory"] is dict_row
 
 
 def test_the_command_line_works_one_claim(monkeypatch):
@@ -218,35 +340,6 @@ def test_the_agent_never_reads_the_data_folder():
         source = path.read_text(encoding="utf-8")
         assert "data/" not in source
         assert "evals" not in source
-
-
-def test_the_payout_tool_is_used_and_shown_as_a_step():
-    lines = [
-        {
-            "description": "Suitcase",
-            "amount": 400,
-            "quantity": 1,
-            "kind": "item",
-            "nights": 0,
-            "hours": 0,
-        }
-    ]
-    model = stub(
-        call_tool("get_claim", claim_id="CLM-1001"),
-        call_tool(
-            "calculate_payout",
-            policy_id="POL-2001",
-            benefit="baggage",
-            lines=lines,
-            paid_by_others=0,
-        ),
-        call_tool("record_decision", **decision("CLM-1001", payout=250.0)),
-        call_tool("pay_claim", claim_id="CLM-1001", amount=250.0),
-        AIMessage(content="Approved."),
-    )
-    assert claim_agent.work_claim(new_run(1), "CLM-1001", model).endswith("paid")
-    texts = [step["text"] for step in recorded_steps("CLM-1001")]
-    assert any(t.startswith("calculate_payout: ") and "250.0" in t for t in texts)
 
 
 def test_tracing_needs_langfuse_keys(monkeypatch):
