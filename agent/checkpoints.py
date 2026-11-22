@@ -25,7 +25,9 @@ SETTINGS: dict[str, Any] = {
 
 def make_pool(url: str) -> ConnectionPool:
     """Make a closed pool of at most 4 connections with LangGraph's settings."""
-    return ConnectionPool(url, max_size=MAX_CONNECTIONS, open=False, kwargs=SETTINGS)
+    return ConnectionPool(
+        url, min_size=1, max_size=MAX_CONNECTIONS, open=False, kwargs=SETTINGS
+    )
 
 
 @cache

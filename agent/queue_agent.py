@@ -126,7 +126,8 @@ def work_queue(run_id: str, llm: BaseChatModel, saver: BaseCheckpointSaver) -> s
         graph_input = None
     elif state.values:
         return state.values["messages"][-1].text
-    result = agent.invoke(graph_input, config, durability="sync")
+    with main.session(run_id):
+        result = agent.invoke(graph_input, config, durability="sync")
     return result["messages"][-1].text
 
 

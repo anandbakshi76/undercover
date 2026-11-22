@@ -1,6 +1,6 @@
 # Process
 
-`uv sync` and `npm install` at the repo root install everything, including a git pre-commit hook. `npm run dev` starts the backend and the dashboard.
+`uv sync` and `npm install` at the repo root install everything, including a git pre-commit hook. `npm run dev` starts the backend, the agent's service and the dashboard, and passes `.env` to the backend and the agent. The tests never get `.env`: they run on SQLite and a stub model, with no network.
 
 `npm run check` runs every check:
 
@@ -33,7 +33,7 @@ When the last phase is done, run `npm run check` and report the results.
 
 - Add tests with each change. Tests never call a model; use a stub model.
 - Outside a plan, commit each change once you have checked it.
-- Run `npm run check` before you hand work over.
+- Run `npm run check` before you hand work over, with `.env` moved out of the way, so it needs no Supabase, Langfuse or OpenRouter.
 - Never use `git commit --no-verify`.
 - Never lower a threshold, turn off a rule or exclude a file to get a green run. If a rule looks wrong, stop and ask.
 - Keep `docs/STATUS.md` up to date.

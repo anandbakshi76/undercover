@@ -2,6 +2,7 @@
 
 import json
 import os
+from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
 import httpx
@@ -54,6 +55,15 @@ def tracing(session_id: str) -> RunnableConfig:
         "callbacks": [CallbackHandler()],
         "metadata": {"langfuse_session_id": session_id},
     }
+
+
+def session(session_id: str) -> AbstractContextManager[Any]:
+    """Put everything traced inside under one Langfuse session, if keys are set."""
+    if not os.getenv("LANGFUSE_SECRET_KEY"):
+        return nullcontext()
+    from langfuse import propagate_attributes  # noqa: PLC0415
+
+    return propagate_attributes(session_id=session_id)
 
 
 def steps(message: BaseMessage) -> list[tuple[str, str]]:

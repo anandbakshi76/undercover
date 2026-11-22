@@ -353,6 +353,15 @@ def test_tracing_needs_langfuse_keys(monkeypatch):
     assert len(callbacks) == 1
 
 
+def test_a_session_is_a_no_op_without_langfuse_keys_and_works_with_them(monkeypatch):
+    with main.session("T-1"):
+        pass
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+    with main.session("T-1"):
+        pass
+
+
 def test_importing_the_agent_does_not_load_env():
     code = "import os, agent.main; print(os.getenv('LANGFUSE_SECRET_KEY'))"
     env = {k: v for k, v in os.environ.items() if not k.startswith("LANGFUSE")}

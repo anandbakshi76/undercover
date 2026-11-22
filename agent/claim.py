@@ -372,7 +372,8 @@ def work_thread(
     )
     problem = "The agent finished without recording a decision."
     try:
-        drive(graph, config, claim)
+        with main.session(thread_id):
+            drive(graph, config, claim)
     except Exception as error:
         problem = f"The agent stopped with an error: {error}."
     claim = main.call("POST", f"/api/claims/{claim_id}/release", {"problem": problem})

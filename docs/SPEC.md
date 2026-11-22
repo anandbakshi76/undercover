@@ -25,7 +25,10 @@ The agent organizes its own work (see `docs/HARNESS.md`):
 - One run works the whole queue: the agent chooses the order and finishes with a short summary for the handlers. A run can be capped at a number of claims, with the rest left waiting, and the agent can also be run on one named claim.
 - It plans the run as a to-do list and keeps it up to date, with each item to do, in progress, done or left for a handler.
 - It hands each claim to a fresh helper that works that one claim from a clean start and reports back in a line.
-- Problems are put right automatically. One bad claim never stops the run or leaves a claim stuck in progress. A claim that fails before it is decided goes back in the queue to be tried again, and a claim that fails twice is left for a handler. No claim is ever decided or paid twice. Before it finishes, the agent checks that it has not missed a waiting claim within its cap.
+- Problems are put right automatically. One bad claim never stops the run or leaves a claim stuck in progress. A claim that fails with an error before it is decided goes back in the queue to be tried again, and a claim that fails twice is left for a handler. Before it finishes, the agent checks that it has not missed a waiting claim within its cap.
+- When the agent approves a payout over the limit, it stops and waits for a handler, keeping everything it has worked out. As soon as a handler signs off on the dashboard, the agent picks the claim up from where it stopped and pays it. Between the sign-off and the payment the claim shows as in progress. If the agent isn't running at that moment, it picks the claim up the next time it runs. The payment records who signed off and when. A handler can only sign off for now.
+- If the agent is stopped partway through a claim, by a crash, a restart or Ctrl-C, it carries on with that claim from where it got to the next time it runs, and that doesn't count as a new attempt. A queue run that was stopped is finished by the next run.
+- No claim is ever decided or paid twice. A repeat of a decision or payment already recorded for a claim counts as done. A different decision on a decided claim is refused.
 
 ## What the team needs to see
 
@@ -45,7 +48,7 @@ The agent organizes its own work (see `docs/HARNESS.md`):
 
 ## Our records
 
-Everything is in `data/`, described in `data/README.md`: the claims queue, the policies, the customers, the plans, the handlers, the policy wording and the claims manual. The held-out claims in `data/evals/` are for checking the agent later and stay out of the queue.
+The claims and everything the agent works on are held in UnderCover's database on Supabase. They start from `data/`, described in `data/README.md`: the claims queue, the policies, the customers, the plans, the handlers, the policy wording and the claims manual. The held-out claims in `data/evals/` are for checking the agent later and stay out of the queue.
 
 ## Not for now
 

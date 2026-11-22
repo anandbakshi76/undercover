@@ -205,7 +205,7 @@ Retries move from middleware to LangGraph's `RetryPolicy` on the nodes: the mode
 - [x] vitest: a paid claim with a sign-off shows the amount, the handler's name and both times; an unpaid approval shows Payment pending
 - [x] vitest: a 503 on Run agent and on Run the queue shows the backend's message
 - [x] `npm run e2e` passes every spec, with the stand-in recording the `resume_claim` request
-- [ ] Playwright MCP: a claim's page after sign-off in light and dark mode, with no horizontal scroll at phone width
+- [x] Playwright MCP: a claim's page after sign-off in light and dark mode, with no horizontal scroll at phone width
 - [x] `npm run check:ts` passes with coverage of 80% or more
 
 ## Phase 6: A live run on Supabase and the handover
@@ -220,10 +220,10 @@ Retries move from middleware to LangGraph's `RetryPolicy` on the nodes: the mode
 
 **Success criteria**
 
-- [ ] Live run on the default model: stop `npm run dev`, `uv run --env-file .env -m backend.db --reset`, `npm run dev`, then Run the queue with 5. Five claims are worked and the other 20 stay Waiting
-- [ ] A claim over the limit waits for sign-off. Signed off on the dashboard through the Playwright MCP server, it shows as Paid within five seconds, with the handler and the time
-- [ ] Stop and carry on: `uv run -m agent --claim <a waiting claim>` is killed (`taskkill /PID <pid> /T /F`) once its first steps show. The claim is In progress. The next `uv run -m agent --limit 1` carries it on with the same `thread_id`, its `attempts` unchanged, and one decision
-- [ ] During the live run, the Supabase MCP server shows no more than 12 connections in `pg_stat_activity` whose user is postgres
-- [ ] Langfuse's API: the held claim's session (its thread id) has traces from before and after the sign-off
-- [ ] `docs/SPEC.md`, `docs/TECH_STACK.md`, `docs/PROCESS.md` and `docs/STATUS.md` describe the product as it now is
-- [ ] With `.env` moved out of the way, `npm run check` passes: ruff, pyright, pytest at 80% or more, Prettier, ESLint, tsc, vitest at 80% or more, and Playwright
+- [x] Live run on the default model: stop `npm run dev`, `uv run --env-file .env -m backend.db --reset`, `npm run dev`, then Run the queue with 5. Five claims are worked and the other 20 stay Waiting
+- [x] A claim over the limit waits for sign-off. Signed off on the dashboard through the Playwright MCP server, it shows as Paid within five seconds, with the handler and the time
+- [x] Stop and carry on: `uv run -m agent --claim <a waiting claim>` is killed (`taskkill /PID <pid> /T /F`) once its first steps show. The claim is In progress. The next `uv run -m agent --limit 1` carries it on with the same `thread_id`, its `attempts` unchanged, and one decision
+- [x] During the live run, the Supabase MCP server shows no more than 12 connections in `pg_stat_activity` whose user is postgres
+- [x] Langfuse's API: the held claim's session (its thread id) has traces from before and after the sign-off
+- [x] `docs/SPEC.md`, `docs/TECH_STACK.md`, `docs/PROCESS.md` and `docs/STATUS.md` describe the product as it now is
+- [x] With `.env` moved out of the way, `npm run check` passes: ruff, pyright, pytest at 80% or more, Prettier, ESLint, tsc, vitest at 80% or more, and Playwright

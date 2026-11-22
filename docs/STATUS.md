@@ -1,37 +1,47 @@
 # Status
 
-The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md` (all six phases done). The harness from `docs/HARNESS.md` is built on top of it, following `docs/PLAN_HARNESS.md` (all six phases done). The harness changed the database schema, so a database from the pilot needs `uv run -m backend.db --reset` once.
+The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md`. The harness from `docs/HARNESS.md` is built on top of it (`docs/PLAN_HARNESS.md`), and durable state from `docs/DURABLE.md` on top of that (`docs/PLAN_DURABLE.md`, all six phases done). Durable state moved the records to Supabase and changed the schema, so a database from the harness needs `uv run --env-file .env -m backend.db --reset` once.
 
 ## What's built
 
-- `backend/`: FastAPI and SQLite. The database (`backend/undercover.db`, or the file in `UNDERCOVER_DB`) is seeded from `data/` on first start, leaving out `data/evals/` and `data/security/`.
+- `backend/`: FastAPI and SQLAlchemy Core. With `DATABASE_URL` in its environment it uses the `undercover` schema on Supabase (at most 4 connections); without it, SQLite (`backend/undercover.db`, or the file in `UNDERCOVER_DB`), which the tests use. Both are seeded from `data/` on first start, leaving out `data/evals/` and `data/security/`.
   - Read: `list_claims`, `get_claim`, `get_policy`, `get_claim_history` (earlier claims only, no personal details), `get_instructions`, `list_handlers`, `list_steps`
-  - Documents: `list_sections`, `read_section` and `search_documents` look up the numbered sections of the policy wording and the claims manual (`backend/documents.py`)
-  - Write: `add_step`, `record_decision`, `pay_claim`, `sign_off`, `run_agent`, `run_queue`
-  - Runs: `start_run`, `get_run`, `get_latest_run`, `update_todos`, `finish_run`, `list_waiting_claims`, `start_claim`, `release_claim`. A run has a cap on the number of claims, enforced by `start_claim`, and a to-do list.
-  - Claim states: `waiting`, `in_progress`, `awaiting_sign_off`, `decided`, `needs_handler`. A claim that fails before a decision goes back to `waiting`; on its second failure it is `needs_handler`. On startup the backend releases any claim left `in_progress`. Approving a payout over $1,000 moves a claim to `awaiting_sign_off`, and `pay_claim` refuses it until a handler signs off. Signing off pays the claim.
-  - `run_agent` (a run with a cap of 1) and `run_queue` (takes `limit`) run the agent in a background task. Steps from every attempt are kept.
-- `backend/instructions/queue.md` and `backend/instructions/claim.md`: the agent's instructions for running the queue and for working a claim, served by `get_instructions`.
+  - Documents: `list_sections`, `read_section` and `search_documents` (`backend/documents.py`)
+  - Payout rules: `calculate_payout` (`backend/payout.py`) takes a policy, a benefit, the covered lines and what others paid, and returns the calculation, the payout and whether it needs a sign-off. The approval limit comes from `data/company.json`.
+  - Write: `add_step`, `record_decision`, `pay_claim`, `sign_off`, `run_agent`, `run_queue`. A repeat of a decision or payment already recorded counts as done and returns the claim; a different one is refused with 409.
+  - Runs: `start_run`, `start_claim_run`, `get_run`, `get_latest_run`, `update_todos`, `finish_run`, `list_waiting_claims`, `start_claim`, `release_claim`, `list_unfinished_claims`, `list_running_runs`. A run has a cap on the number of claims, enforced by `start_claim`, and a to-do list. `start_claim` gives a claim a thread (`<claim>-<run>-<attempt>`); starting a claim already in progress in the same run returns it.
+  - Claim states: `waiting`, `in_progress`, `awaiting_sign_off`, `decided`, `needs_handler`. A claim stays `in_progress` while the agent owes it work: being worked, an approval not yet paid, or signed off and not yet paid. Approving over $1,000 moves it to `awaiting_sign_off`, and `pay_claim` refuses it until a handler signs off. `sign_off` records who and when, moves the claim to `in_progress` and tells the agent's service in a background task; it no longer pays, and it stands if the service can't be reached. `release_claim` changes nothing on a claim that has a decision. The backend no longer cleans up on startup: the agent carries on what a restart left.
+  - `run_agent` and `run_queue` pass the request to the agent's service (`UNDERCOVER_AGENT`, or `http://127.0.0.1:8002`), and return 503 "The agent isn't running." if it can't be reached.
+- `backend/instructions/queue.md` and `backend/instructions/claim.md`: the agent's instructions, served by `get_instructions`.
 - `agent/`: the UnderCover Agent on OpenRouter (`deepseek/deepseek-v4.1-flash` with low reasoning effort, or `MODEL_NAME`).
-  - `agent/claim.py`: the claim agent. `work_claim(run_id, claim_id)` starts a claim in a run, works it with a new `create_agent` and a new thread, releases it if it fails, and returns one line such as "CLM-1001: approved, $420.00 paid". Its tools call the backend: `get_claim`, `get_policy`, `get_claim_history`, `search_documents`, `list_sections`, `read_section`, `record_decision` and `pay_claim`. Middleware retries the model and the backend, and stops an agent after 40 model calls. Each tool call, result, section read and reply is posted as a step.
-  - `agent/queue_agent.py`: the queue agent. `run_queue(run_id)` plans the run with `write_todos`, finds claims with `list_waiting_claims` and hands each to a claim agent with `work_claim`, one at a time. A middleware check sends it back when it tries to finish with waiting claims still within its cap (up to 3 times). Its final reply is the run's summary; if it fails, the run is marked `failed`.
-  - `uv run -m agent --limit 5` runs the queue on five claims, and `uv run -m agent --claim CLM-1001` works one claim, against a running backend.
+  - `agent/claim.py`: the claim agent, a LangGraph graph: `agent` and `tools` (the lookups and `calculate_payout`) in a loop, then `decide` (a structured decision, recorded through the backend), then `wait_for_sign_off` (`interrupt()`, only when the backend puts the claim in `awaiting_sign_off`) and `pay`. Each node has a retry policy, and 30 model calls is the limit. `work_claim(run_id, claim_id)` starts a claim and `carry_on(claim_id)` works it from its thread's last checkpoint, releasing it if it fails with an error. Ctrl-C or a killed process isn't an error: the claim stays in progress, and carries on with the same thread and attempts. One thread at a time works a claim in a process.
+  - `agent/checkpoints.py`: LangGraph's synchronous Postgres checkpointer (`durability="sync"`, a pool of at most 4 connections) in the `undercover` schema, or in memory without `DATABASE_URL`.
+  - `agent/queue_agent.py`: the queue agent, with a to-do list, `work_claim` and a check for missed claims. It is checkpointed with the run as its thread, so a stopped run is finished by `resume`.
+  - `agent/resume.py`: carries on every claim in progress, then every queue run left running. Every run does this first.
+  - `agent/service.py`: the agent's service (port 8002): `run_queue`, `run_claim`, `resume_claim` and `health`.
+  - `agent/main.py`: the model, the backend client, and Langfuse tracing. With the Langfuse keys set, each claim's work, before and after a pause, is in one Langfuse session named after its thread, and each queue run in a session named after the run.
+  - `uv run -m agent --limit 5` runs the queue on five claims and `uv run -m agent --claim CLM-1001` works one claim, against a running backend. Both carry on earlier work first.
 - `dashboard/`: React, Vite and TypeScript in the UnderCover brand. It starts in the system's light or dark setting, and the Dark mode button in the header switches it and remembers the choice in the browser.
-  - `#/`: the queue, with a count for each state, a Claims to work box (starting at 5) and a Run the queue button, and the latest run's to-do list, progress and summary, refreshed while the run is running
-  - `#/claims/<id>`: the claim, its policy, the decision with its reason and section, the payment, a Run agent button, what the agent read, the agent's steps as it works, and sign-off by a handler for payouts over $1,000
-  - `#/instructions`: the agent's instructions for running the queue and for working a claim, read only
-- `e2e/`: Playwright tests of the queue, the steps and decision on a claim, sign-off of a payout over $1,000, dark mode (`pilot.spec.ts`), and the sections read, a claim that needs a handler, a run's to-do list being ticked off, and both sets of instructions (`harness.spec.ts`). They run their own backend (port 8001, `e2e/test.db`, rebuilt each run) and dashboard (port 5174), and stand in for the agent through the API, so they never call a model.
+  - `#/`: the queue, with a count for each state, a Claims to work box (starting at 5) and a Run the queue button, and the latest run's to-do list, progress and summary
+  - `#/claims/<id>`: the claim, its policy, the decision with its reason and section, the payment, a Run agent button, what the agent read, the agent's steps as it works, and Sign off for payouts over $1,000. After a sign-off the claim shows In progress and the page refreshes every two seconds until it is paid, then shows the payment with the handler and the times.
+  - `#/instructions`: the agent's instructions, read only
+- `e2e/`: Playwright tests. They run their own backend (port 8001, `e2e/test.db`, rebuilt each run), dashboard (port 5174) and a stand-in for the agent's service (`e2e/agent-stand-in.js`, port 8003, which records what the backend sends it), so they never call a model and never reach the service `npm run dev` starts.
 
 ## Running it
 
-- `npm run dev` starts the backend on port 8000 and the dashboard on http://localhost:5173
-- Set Claims to work and press Run the queue, or open a claim and press Run agent. Each run calls the model in `MODEL_NAME`, or DeepSeek V4.1 Flash by default; `MODEL_NAME=openrouter/free` in `.env` is free. For trials, reseed first and keep the cap at 5
-- From the command line, with the backend running: `uv run -m agent --limit 5` or `uv run -m agent --claim CLM-1001`
-- `uv run -m backend.db --reset` rebuilds the database from `data/`
-- `npm run check` runs every check
+- Put `OPENROUTER_API_KEY`, `DATABASE_URL` (the Supabase session pooler string) and the Langfuse keys in `.env`.
+- `uv run --env-file .env -m backend.db --reset` rebuilds the database on Supabase (and drops the agent's checkpoints). Stop `npm run dev` first.
+- `npm run dev` starts the backend (port 8000), the agent's service (port 8002) and the dashboard (http://localhost:5173), and passes `.env` to the first two.
+- Set Claims to work and press Run the queue, or open a claim and press Run agent. For trials, reseed first and keep the cap at 5. `MODEL_NAME=openrouter/free` in `.env` is free.
+- `npm run check` runs every check. Move `.env` out of the way first: the tests never need Supabase, Langfuse or OpenRouter.
 
 ## Notes
 
 - Unused: `policy_wording_short.md`, `knowledge.json` and `security/`.
-- The agent's accuracy hasn't been measured against `data/evals/`. In the harness's live run (DeepSeek V4.1 Flash, capped at 5, after a reseed) the queue agent chose the five oldest claims, wrote and ticked off its to-do list, and left the other 20 waiting. It approved and paid CLM-1001 ($420.00), approved CLM-1008 ($2,240.00) and CLM-1011 ($1,150.00), which wait for sign-off, referred CLM-1018 (no proof of value for a $420 jacket, manual section 5) and declined CLM-1010 (treatment while intoxicated, wording section 9). Each claim agent read 10 to 14 sections; nothing failed or went back to the queue.
-- Stopping `npm run dev` from a tool on Windows can leave uvicorn and vite running; stop the whole process tree (`taskkill /PID <npm pid> /T /F`).
+- The agent's accuracy hasn't been measured against `data/evals/`.
+- Live run after a reseed (DeepSeek V4.1 Flash, capped at 5): the queue agent worked CLM-1001 (approved, $420.00 paid), CLM-1008 ($2,240.00) and CLM-1011 ($1,150.00), which waited for sign-off, CLM-1018 (referred) and CLM-1010 (declined), and left 20 waiting. Signing CLM-1008 off on the dashboard (through the Playwright MCP server) showed it paid with the handler and time 2 seconds later. A claim started from the command line and killed after its first steps (CLM-1002) was In progress with its attempts unchanged; the next run carried it on with the same thread and one decision, and paid it.
+- Connections: `postgres` connections in `pg_stat_activity`, read through the Supabase MCP server, were 7 at the start of the first run and 9 to 12 in the second. Supabase counts its own `pg_net` connection and the Supavisor pooler's idle connections, which stay for a while after a process stops. The checkpointer's pool starts at 1 connection.
+- Langfuse: a claim worked inside a queue run is traced inside the queue run's trace, so the agent sets the session explicitly around each claim. After the fix, CLM-1008's session had a trace from before the sign-off and one from after. Langfuse's old traces endpoint has been removed; the observations endpoint is the one to use.
+- Two processes can't see each other's locks: `uv run -m agent` carrying on claims while the agent's service is working the same claims would work them twice. The backend still stops a repeat decision or payment, so nothing is decided or paid twice.
+- Stopping `npm run dev` from a tool on Windows can leave uvicorn and vite running; stop the whole process tree (`taskkill /PID <pid> /T /F`).
+- Supabase's advisor flags the `undercover` tables, like the lab's `lab` tables, for having row-level security off. Supabase's public API only serves `public` by default, so they aren't reachable that way.
