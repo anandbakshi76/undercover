@@ -4,7 +4,7 @@ import argparse
 
 from dotenv import load_dotenv
 
-from agent import claim, main, queue_agent
+from agent import claim, main, queue_agent, resume
 
 
 def cli(argv: list[str] | None = None) -> str:
@@ -14,6 +14,8 @@ def cli(argv: list[str] | None = None) -> str:
     choice.add_argument("--limit", type=int, help="run the queue on this many claims")
     choice.add_argument("--claim", help="work this one claim")
     args = parser.parse_args(argv)
+    for line in resume.resume():
+        print(line)
     run = main.call("POST", "/api/runs", {"limit": args.limit or 1})
     if args.limit:
         return queue_agent.run_queue(run["run_id"])

@@ -1,6 +1,7 @@
 """The claim agent: a LangGraph graph that works one claim and reports in a line."""
 
 import json
+import threading
 from typing import Annotated, Any, Literal, TypedDict
 from urllib.parse import quote
 
@@ -22,6 +23,7 @@ from backend.payout import Benefit, Line
 MODEL_CALL_LIMIT = 30
 MAX_ATTEMPTS = 2
 RECURSION_LIMIT = 100
+LOCKS: dict[str, threading.Lock] = {}
 
 Document = Literal["policy_wording", "claims_manual"]
 
@@ -348,6 +350,14 @@ def carry_on(
     llm: BaseChatModel | None = None,
     saver: BaseCheckpointSaver | None = None,
 ) -> str:
+    """Work a claim from its last checkpoint, one thread at a time per claim."""
+    with LOCKS.setdefault(claim_id, threading.Lock()):
+        return work_thread(claim_id, llm, saver)
+
+
+def work_thread(
+    claim_id: str, llm: BaseChatModel | None, saver: BaseCheckpointSaver | None
+) -> str:
     """Work a claim from its last checkpoint, release it if it fails, and report."""
     claim = main.call("GET", f"/api/claims/{claim_id}")
     thread_id = claim["thread_id"]
@@ -376,6 +386,9 @@ def work_claim(
     saver: BaseCheckpointSaver | None = None,
 ) -> str:
     """Start a waiting claim in a run, work it with a claim agent, and report."""
+    worked = main.call("GET", f"/api/claims/{claim_id}")
+    if worked.get("run_id") == run_id and worked.get("decision") is not None:
+        return report(worked, "")
     started = main.call("POST", f"/api/claims/{claim_id}/start", {"run_id": run_id})
     if "detail" in started:
         return f"{claim_id}: not started. {started['detail']}"

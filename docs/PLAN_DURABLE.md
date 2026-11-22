@@ -175,15 +175,15 @@ Retries move from middleware to LangGraph's `RetryPolicy` on the nodes: the mode
 
 **Success criteria** (pytest with stub models; the backend's call to the service is replaced by a stand-in)
 
-- [ ] Sign-off resumes and pays once: a claim paused for sign-off, signed off by HND-01, is `in_progress` with no payment. The backend has called `resume_claim` for it. Resuming pays it once, and the claim is `decided` with the payment showing HND-01 and the time of the sign-off. A second resume pays nothing more
-- [ ] A sign-off still stands when the agent's service can't be reached, and the response doesn't wait for the payment
-- [ ] `run_queue` and `run_agent` return 503 with "The agent isn't running." when the service can't be reached, and change nothing
-- [ ] A run first carries on a claim signed off while the agent was away, and a claim stopped partway, before it starts new claims
-- [ ] A queue run stopped in the middle of a claim is finished by the next run: the claim is decided once, the stopped run's to-do list is finished and the run is `finished` with a summary
-- [ ] The service's `run_claim` on a claim that isn't waiting returns the backend's 409; `run_queue` with `limit` 0 returns 422; every service operation passes the same OpenAPI rule test as the backend
-- [ ] A backend restart leaves claims in progress and running runs as they were
-- [ ] `npm run dev` starts all three on Windows; `curl http://127.0.0.1:8002/api/health` returns ok
-- [ ] `npm run check:python` passes with coverage of 80% or more
+- [x] Sign-off resumes and pays once: a claim paused for sign-off, signed off by HND-01, is `in_progress` with no payment. The backend has called `resume_claim` for it. Resuming pays it once, and the claim is `decided` with the payment showing HND-01 and the time of the sign-off. A second resume pays nothing more
+- [x] A sign-off still stands when the agent's service can't be reached, and the response doesn't wait for the payment
+- [x] `run_queue` and `run_agent` return 503 with "The agent isn't running." when the service can't be reached, and change nothing
+- [x] A run first carries on a claim signed off while the agent was away, and a claim stopped partway, before it starts new claims
+- [x] A queue run stopped in the middle of a claim is finished by the next run: the claim is decided once, the stopped run's to-do list is finished and the run is `finished` with a summary
+- [x] The service's `run_claim` on a claim that isn't waiting returns the backend's 409; `run_queue` with `limit` 0 returns 422; every service operation passes the same OpenAPI rule test as the backend
+- [x] A backend restart leaves claims in progress and running runs as they were
+- [x] `npm run dev` starts all three on Windows; `curl http://127.0.0.1:8002/api/health` returns ok
+- [x] `npm run check:python` passes with coverage of 80% or more
 
 ## Phase 5: The dashboard and end-to-end tests
 

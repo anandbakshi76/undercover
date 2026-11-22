@@ -1,6 +1,8 @@
 """The UnderCover backend."""
 
 import json
+import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -8,24 +10,23 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
+import httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import Connection, RowMapping, insert, select, update
 
-from agent import claim as claim_agent
-from agent import queue_agent
 from backend import db, documents, payout
 from backend.db import claims, records, run_claims, runs, steps
 
 Row = RowMapping
 
 INSTRUCTIONS = Path(__file__).resolve().parent / "instructions"
+LOG = logging.getLogger("uvicorn.error")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     db.init()
-    recover()
     yield
 
 
@@ -84,6 +85,7 @@ def claim_view(row: Row) -> dict[str, Any]:
         "payment": payment,
         "attempts": row["attempts"],
         "thread_id": row["thread_id"],
+        "run_id": row["run_id"],
     }
 
 
@@ -353,8 +355,39 @@ def pay_claim(claim_id: str, payment: Payment) -> dict[str, Any]:
         return claim_view(claim_row(connection, claim_id))
 
 
+def agent_client() -> httpx.Client:
+    """Return a client for the agent's service."""
+    url = os.getenv("UNDERCOVER_AGENT") or "http://127.0.0.1:8002"
+    return httpx.Client(base_url=url, timeout=30)
+
+
+def forward(path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Pass a request on to the agent's service, or say that it isn't running."""
+    try:
+        with agent_client() as client:
+            response = client.post(path, json=body)
+    except httpx.TransportError:
+        raise HTTPException(503, "The agent isn't running.") from None
+    if response.is_error:
+        raise HTTPException(response.status_code, response.json()["detail"])
+    return response.json()
+
+
+def tell_agent(claim_id: str) -> None:
+    """Tell the agent's service that a claim is signed off, if it can be reached."""
+    try:
+        with agent_client() as client:
+            client.post(f"/api/claims/{claim_id}/resume")
+    except httpx.HTTPError as error:
+        LOG.warning(
+            "The agent was not told about the sign-off on %s: %s", claim_id, error
+        )
+
+
 @app.post("/api/claims/{claim_id}/sign-off", operation_id="sign_off")
-def sign_off(claim_id: str, sign_off: SignOff) -> dict[str, Any]:
+def sign_off(
+    claim_id: str, sign_off: SignOff, background: BackgroundTasks
+) -> dict[str, Any]:
     """Sign off an approval over the limit as a handler, so the agent can pay it."""
     with db.connect() as connection:
         handler = record(connection, "handler", sign_off.handler_id)
@@ -372,11 +405,12 @@ def sign_off(claim_id: str, sign_off: SignOff) -> dict[str, Any]:
                 signed_off_at=now(),
             )
         )
-        return claim_view(claim_row(connection, claim_id))
+        view = claim_view(claim_row(connection, claim_id))
+    background.add_task(tell_agent, claim_id)
+    return view
 
 
 MAX_ATTEMPTS = 2
-RESTARTED = "The backend restarted during the run."
 
 TodoStatus = Literal["to_do", "in_progress", "done", "left_for_handler"]
 
@@ -532,21 +566,6 @@ def end_run(connection: Connection, run_id: str, end: RunEnd) -> None:
     )
 
 
-def recover() -> None:
-    """Release claims and fail runs left behind by a backend that stopped."""
-    with db.connect() as connection:
-        stuck = connection.execute(
-            select(claims.c.claim_id).where(claims.c.status == "in_progress")
-        ).scalars()
-        for claim_id in list(stuck):
-            release(connection, claim_id, RESTARTED)
-        connection.execute(
-            update(runs)
-            .where(runs.c.status == "running")
-            .values(status="failed", summary=RESTARTED, finished_at=now())
-        )
-
-
 @app.post("/api/runs", operation_id="start_run")
 def start_run(run_limit: RunLimit) -> dict[str, Any]:
     """Start a queue run capped at a number of claims, without starting an agent."""
@@ -634,28 +653,51 @@ def release_claim(claim_id: str, release_input: Release) -> dict[str, Any]:
         return claim_view(claim_row(connection, claim_id))
 
 
-def work_one(run_id: str, claim_id: str) -> None:
-    claim_agent.carry_on(claim_id)
-    with db.connect() as connection:
-        end_run(connection, run_id, RunEnd(status="finished", summary=""))
-
-
-@app.post("/api/claims/{claim_id}/run", operation_id="run_agent")
-def run_agent(claim_id: str, background: BackgroundTasks) -> dict[str, str]:
-    """Start the UnderCover Agent on one waiting claim."""
+@app.post("/api/claims/{claim_id}/start-run", operation_id="start_claim_run")
+def start_claim_run(claim_id: str) -> dict[str, str]:
+    """Start a run on one waiting claim, without starting an agent."""
     with db.connect() as connection:
         claim_row(connection, claim_id)
         run_id = new_run(connection, "claim", 1)
         start(connection, run_id, claim_id)
-    background.add_task(work_one, run_id, claim_id)
     return {"status": "in_progress", "run_id": run_id}
 
 
-@app.post("/api/queue/run", operation_id="run_queue")
-def run_queue(run_limit: RunLimit, background: BackgroundTasks) -> dict[str, Any]:
-    """Start the UnderCover Agent on the queue, capped at a number of claims."""
+@app.get("/api/queue/unfinished", operation_id="list_unfinished_claims")
+def list_unfinished_claims() -> list[dict[str, Any]]:
+    """List the claims the agent still owes work, with their runs and threads."""
     with db.connect() as connection:
-        run_id = new_run(connection, "queue", run_limit.limit)
-        run = run_view(connection, run_id)
-    background.add_task(queue_agent.run_queue, run_id)
-    return run
+        rows = (
+            connection.execute(
+                select(claims.c.claim_id, claims.c.run_id, claims.c.thread_id)
+                .where(claims.c.status == "in_progress", claims.c.thread_id.isnot(None))
+                .order_by(claims.c.claim_id)
+            )
+            .mappings()
+            .all()
+        )
+    return [dict(row) for row in rows]
+
+
+@app.get("/api/queue/running-runs", operation_id="list_running_runs")
+def list_running_runs() -> list[dict[str, Any]]:
+    """List the queue runs that are still marked as running."""
+    with db.connect() as connection:
+        run_ids = connection.execute(
+            select(runs.c.run_id)
+            .where(runs.c.kind == "queue", runs.c.status == "running")
+            .order_by(runs.c.id)
+        ).scalars()
+        return [run_view(connection, run_id) for run_id in list(run_ids)]
+
+
+@app.post("/api/claims/{claim_id}/run", operation_id="run_agent")
+def run_agent(claim_id: str) -> dict[str, Any]:
+    """Start the UnderCover Agent on one waiting claim."""
+    return forward(f"/api/claims/{claim_id}/run")
+
+
+@app.post("/api/queue/run", operation_id="run_queue")
+def run_queue(run_limit: RunLimit) -> dict[str, Any]:
+    """Start the UnderCover Agent on the queue, capped at a number of claims."""
+    return forward("/api/queue/run", {"limit": run_limit.limit})

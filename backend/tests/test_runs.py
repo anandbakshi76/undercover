@@ -1,7 +1,7 @@
-import pytest
+import httpx
 from fastapi.testclient import TestClient
 
-from backend import db, main
+from backend import main
 
 
 def decline(claim_id, thread_id):
@@ -14,20 +14,6 @@ def decline(claim_id, thread_id):
             policy_section="Section 9",
         ),
     )
-
-
-@pytest.fixture
-def runs(monkeypatch):
-    seen = []
-
-    def fake_work(claim_id):
-        with db.connect() as connection:
-            run_id = main.claim_row(connection, claim_id)["run_id"]
-        seen.append((run_id, claim_id))
-        decline(claim_id, run_id)
-
-    monkeypatch.setattr(main.claim_agent, "carry_on", fake_work)
-    return seen
 
 
 def new_run(client, limit):
@@ -179,56 +165,78 @@ def test_the_waiting_claims_show_their_attempts(client):
     assert waiting[0]["attempts"] == 1
 
 
-def test_startup_releases_stuck_claims_and_fails_running_runs(client):
+def test_a_restart_leaves_claims_in_progress_and_runs_running(client):
     run_id = new_run(client, 1)
     start(client, run_id, "CLM-1001")
-    main.recover()
-    assert status(client, "CLM-1001") == "waiting"
-    run = client.get(f"/api/runs/{run_id}").json()
-    assert run["status"] == "failed"
-    assert run["summary"] == "The backend restarted during the run."
-    step = client.get("/api/claims/CLM-1001/steps").json()[-1]
-    assert step["text"].startswith("The backend restarted during the run.")
+    with TestClient(main.app) as restarted:
+        assert status(restarted, "CLM-1001") == "in_progress"
+        assert restarted.get(f"/api/runs/{run_id}").json()["status"] == "running"
 
 
-def test_the_app_recovers_when_it_starts():
-    db.init()
-    with db.connect() as connection:
-        run_id = main.new_run(connection, "queue", 1)
-        main.start(connection, run_id, "CLM-1001")
-    with TestClient(main.app) as client:
-        assert status(client, "CLM-1001") == "waiting"
+def test_the_agent_can_ask_which_claims_and_runs_are_unfinished(client):
+    run_id = new_run(client, 2)
+    start(client, run_id, "CLM-1001")
+    unfinished = client.get("/api/queue/unfinished").json()
+    assert unfinished == [
+        {
+            "claim_id": "CLM-1001",
+            "run_id": run_id,
+            "thread_id": f"CLM-1001-{run_id}-1",
+        }
+    ]
+    running = client.get("/api/queue/running-runs").json()
+    assert [run["run_id"] for run in running] == [run_id]
+    client.post(
+        f"/api/runs/{run_id}/finish", json={"status": "finished", "summary": "Done."}
+    )
+    assert client.get("/api/queue/running-runs").json() == []
 
 
-def test_run_agent_decides_a_waiting_claim(client, runs):
-    response = client.post("/api/claims/CLM-1001/run").json()
+def test_starting_a_claim_run_starts_no_agent(client, agent):
+    response = client.post("/api/claims/CLM-1001/start-run").json()
     assert response["status"] == "in_progress"
-    assert runs[0] == (response["run_id"], "CLM-1001")
-    assert status(client, "CLM-1001") == "decided"
+    assert status(client, "CLM-1001") == "in_progress"
     run = client.get(f"/api/runs/{response['run_id']}").json()
     assert run["kind"] == "claim"
-    assert run["status"] == "finished"
+    assert client.post("/api/claims/CLM-1001/start-run").status_code == 409
+    assert client.post("/api/claims/CLM-0000/start-run").status_code == 404
+    assert agent.calls == []
 
 
-def test_run_agent_needs_a_waiting_claim(client, runs):
-    client.post("/api/claims/CLM-1001/run")
+def test_run_agent_asks_the_agents_service(client, agent):
+    response = client.post("/api/claims/CLM-1001/run")
+    assert response.json() == {"status": "started", "run_id": "RUN-1"}
+    assert agent.calls == [("POST", "/api/claims/CLM-1001/run", None)]
+
+
+def test_run_queue_asks_the_agents_service_with_the_cap(client, agent):
+    client.post("/api/queue/run", json={"limit": 3})
+    assert agent.calls == [("POST", "/api/queue/run", {"limit": 3})]
+
+
+def test_the_agents_refusals_come_through(client, agent):
+    agent.reply = httpx.Response(409, json={"detail": "Claim CLM-1001 is not waiting."})
     response = client.post("/api/claims/CLM-1001/run")
     assert response.status_code == 409
-    assert len(runs) == 1
+    assert response.json()["detail"] == "Claim CLM-1001 is not waiting."
 
 
-def test_run_agent_on_an_unknown_claim_is_404(client, runs):
-    assert client.post("/api/claims/CLM-0000/run").status_code == 404
+def test_running_needs_the_agent_to_be_up(client, agent):
+    agent.down = True
+    for path, body in [
+        ("/api/claims/CLM-1001/run", None),
+        ("/api/queue/run", {"limit": 1}),
+    ]:
+        response = client.post(path, json=body)
+        assert response.status_code == 503
+        assert response.json()["detail"] == "The agent isn't running."
+    assert status(client, "CLM-1001") == "waiting"
+    assert client.get("/api/queue/latest-run").json() is None
 
 
-def test_run_queue_starts_the_queue_agent_on_a_capped_run(client, monkeypatch):
-    started = []
-    monkeypatch.setattr(main.queue_agent, "run_queue", started.append)
-    run = client.post("/api/queue/run", json={"limit": 3}).json()
-    assert run["claim_limit"] == 3
-    assert run["kind"] == "queue"
-    assert started == [run["run_id"]]
-    assert client.get("/api/queue/latest-run").json()["run_id"] == run["run_id"]
+def test_run_queue_needs_a_cap_of_at_least_one(client, agent):
+    assert client.post("/api/queue/run", json={"limit": 0}).status_code == 422
+    assert agent.calls == []
 
 
 def test_a_cap_of_one_says_claim(client):
@@ -242,11 +250,6 @@ def test_the_instructions_cover_the_queue_and_a_claim(client):
     instructions = client.get("/api/instructions").json()
     assert instructions["queue"].startswith("# Running the queue")
     assert instructions["claim"].startswith("# Working a claim")
-
-
-def test_run_queue_needs_a_cap_of_at_least_one(client, runs):
-    assert client.post("/api/queue/run", json={"limit": 0}).status_code == 422
-    assert runs == []
 
 
 def test_starting_a_claim_gives_it_a_thread_and_a_repeat_start_returns_it(client):

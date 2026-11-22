@@ -1,11 +1,17 @@
 from contextlib import nullcontext
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from agent import main
+from agent import checkpoints, main
 from backend import db
+from backend import main as backend
 from backend.main import app
+
+
+def refuse(request):
+    raise httpx.ConnectError("refused")
 
 
 @pytest.fixture(autouse=True)
@@ -15,6 +21,9 @@ def fresh_backend(tmp_path, monkeypatch):
     client = TestClient(app)
     monkeypatch.setattr(main, "backend", lambda: nullcontext(client))
     monkeypatch.setattr(main, "RETRY_DELAY", 0)
+    down = httpx.Client(base_url="http://agent", transport=httpx.MockTransport(refuse))
+    monkeypatch.setattr(backend, "agent_client", lambda: down)
+    checkpoints.checkpointer.cache_clear()
 
 
 @pytest.fixture(autouse=True)

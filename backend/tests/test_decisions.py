@@ -153,3 +153,28 @@ def test_steps_come_back_in_order(client):
 
 def test_steps_for_an_unknown_claim_are_404(client):
     assert client.get("/api/claims/CLM-0000/steps").status_code == 404
+
+
+def test_a_sign_off_tells_the_agent_once_it_is_saved(client, agent):
+    decide(client, "CLM-1002", payout=1250.0)
+    claim = sign_off(client, "CLM-1002").json()
+    assert agent.calls == [("POST", "/api/claims/CLM-1002/resume", None)]
+    assert claim["status"] == "in_progress"
+    assert claim["payment"] is None
+
+
+def test_a_sign_off_stands_when_the_agent_cannot_be_reached(client, agent):
+    agent.down = True
+    decide(client, "CLM-1002", payout=1250.0)
+    response = sign_off(client, "CLM-1002")
+    assert response.status_code == 200
+    saved = client.get("/api/claims/CLM-1002").json()
+    assert saved["sign_off"]["handler_id"] == "HND-01"
+    assert saved["status"] == "in_progress"
+    assert saved["payment"] is None
+
+
+def test_a_refused_sign_off_tells_the_agent_nothing(client, agent):
+    decide(client, "CLM-1001")
+    assert sign_off(client, "CLM-1001").status_code == 409
+    assert agent.calls == []

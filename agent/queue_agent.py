@@ -12,10 +12,12 @@ from langchain.agents.middleware import (
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import BaseTool, tool
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
-from agent import claim, main
+from agent import checkpoints, claim, main
 
 MAX_CHECKS = 3
+ACTIVE: set[str] = set()
 
 
 class Todo(TypedDict):
@@ -86,8 +88,11 @@ class MissedClaimCheck(AgentMiddleware):
         return {"messages": [HumanMessage(content=reminder)], "jump_to": "model"}
 
 
-def work_queue(run_id: str, llm: BaseChatModel) -> str:
-    """Run the queue agent on a run, and return its summary for the handlers."""
+def work_queue(run_id: str, llm: BaseChatModel, saver: BaseCheckpointSaver) -> str:
+    """Run the queue agent on a run, and return its summary for the handlers.
+
+    A run that was stopped carries on from its last checkpoint.
+    """
     instructions = main.call("GET", "/api/instructions")["queue"]
     limit = get_run(run_id)["claim_limit"]
     agent = create_agent(
@@ -100,23 +105,51 @@ def work_queue(run_id: str, llm: BaseChatModel) -> str:
             ),
             MissedClaimCheck(run_id),
         ],
+        checkpointer=saver,
     )
+    config = (
+        main.tracing(run_id)
+        | {"configurable": {"thread_id": run_id}}
+        | {"recursion_limit": 100}
+    )
+    state = agent.get_state(config)
     claims = "claim" if limit == 1 else "claims"
-    task = f"Work the queue. This run is capped at {limit} {claims}."
-    result = agent.invoke(
-        {"messages": [{"role": "user", "content": task}]}, config=main.tracing(run_id)
-    )
+    graph_input: Any = {
+        "messages": [
+            {
+                "role": "user",
+                "content": f"Work the queue. This run is capped at {limit} {claims}.",
+            }
+        ]
+    }
+    if state.next:
+        graph_input = None
+    elif state.values:
+        return state.values["messages"][-1].text
+    result = agent.invoke(graph_input, config, durability="sync")
     return result["messages"][-1].text
 
 
-def run_queue(run_id: str, llm: BaseChatModel | None = None) -> str:
+def run_queue(
+    run_id: str,
+    llm: BaseChatModel | None = None,
+    saver: BaseCheckpointSaver | None = None,
+) -> str:
     """Run the queue agent, then record the run as finished or failed."""
+    ACTIVE.add(run_id)
     try:
-        end = {"status": "finished", "summary": work_queue(run_id, llm or main.model())}
+        end = {
+            "status": "finished",
+            "summary": work_queue(
+                run_id, llm or main.model(), saver or checkpoints.checkpointer()
+            ),
+        }
     except Exception as error:
         end = {
             "status": "failed",
             "summary": f"The queue agent stopped with an error: {error}.",
         }
+    finally:
+        ACTIVE.discard(run_id)
     main.call("POST", f"/api/runs/{run_id}/finish", end)
     return end["summary"]
