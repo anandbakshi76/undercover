@@ -1,6 +1,8 @@
 import os
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -321,6 +323,48 @@ def test_each_claim_run_gets_a_saver_of_its_own_on_one_shared_pool(monkeypatch):
     assert first.conn is second.conn is pool
     assert first.lock is not second.lock
     assert pool.timeout == checkpoints.WAIT_FOR_CONNECTION
+
+
+def test_claims_asking_at_once_share_one_pool_and_do_not_each_make_their_own(
+    monkeypatch,
+):
+    made = []
+    barrier = threading.Barrier(16)
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def execute(self, sql):
+            time.sleep(0.01)
+
+    def make(url):
+        made.append(url)
+        return checkpoints.ConnectionPool(url, open=False)
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@db.example.com:5432/postgres")
+    monkeypatch.setattr(checkpoints.psycopg, "connect", lambda *a, **k: Connection())
+    monkeypatch.setattr(checkpoints, "make_pool", make)
+    monkeypatch.setattr(checkpoints.ConnectionPool, "open", lambda self: None)
+    monkeypatch.setattr(PostgresSaver, "setup", lambda self: None)
+    checkpoints.make_shared_pool.cache_clear()
+    pools = []
+
+    def ask():
+        barrier.wait()
+        pools.append(checkpoints.shared_pool())
+
+    threads = [threading.Thread(target=ask) for _ in range(16)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    checkpoints.make_shared_pool.cache_clear()
+    assert len(made) == 1
+    assert len({id(pool) for pool in pools}) == 1
 
 
 def test_the_pool_keeps_to_four_connections_with_langgraphs_settings():

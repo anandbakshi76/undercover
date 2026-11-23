@@ -1,6 +1,7 @@
 """Where the claim graph saves its progress: Supabase, or memory without it."""
 
 import os
+import threading
 from functools import cache
 from typing import Any
 
@@ -42,9 +43,18 @@ def memory() -> InMemorySaver:
     return InMemorySaver()
 
 
-@cache
+POOL_LOCK = threading.Lock()
+
+
 def shared_pool() -> ConnectionPool:
-    """Return this process's pool, made on first use with the tables set up."""
+    """Return this process's pool, made once however many claims ask at first."""
+    with POOL_LOCK:
+        return make_shared_pool()
+
+
+@cache
+def make_shared_pool() -> ConnectionPool:
+    """Make the pool, with the tables set up."""
     url = os.environ["DATABASE_URL"]
     with psycopg.connect(url, autocommit=True) as connection:
         connection.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
