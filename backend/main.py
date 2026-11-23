@@ -779,16 +779,26 @@ def create_evaluation(new: NewEvaluation) -> dict[str, Any]:
 
 def evaluation_rows(connection: Connection, run: Row) -> list[dict[str, Any]]:
     """One row for each copy: the agent's answer beside the handler's."""
+    copies = {
+        row["claim_id"]: row
+        for row in connection.execute(
+            select(claims).where(claims.c.evaluation_id == run["run_id"])
+        ).mappings()
+    }
+    key = {
+        claim_id: {"decision": decision, "payout": payout}
+        for claim_id, decision, payout in connection.execute(
+            select(
+                eval_decisions.c.claim_id,
+                eval_decisions.c.decision,
+                eval_decisions.c.payout,
+            ).where(eval_decisions.c.eval_set == run["evaluation_set"])
+        ).all()
+    }
     rows = []
     for item in run_claims_view(connection, run["run_id"]):
-        copy = claim_row(connection, item["claim_id"])
-        key = connection.execute(
-            select(eval_decisions.c.decision, eval_decisions.c.payout).where(
-                eval_decisions.c.eval_set == run["evaluation_set"],
-                eval_decisions.c.claim_id == copy["source_id"],
-            )
-        ).one()
-        handler = {"decision": key[0], "payout": key[1]}
+        copy = copies[item["claim_id"]]
+        handler = key[copy["source_id"]]
         agent = scoring.answer(copy["decision"], copy["payout"])
         rows.append(
             {

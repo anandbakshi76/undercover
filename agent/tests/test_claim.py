@@ -3,6 +3,7 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from agent.tests.stubs import (
     claim,
     decide,
     decision,
+    new_dispatch,
     new_run,
     recorded_steps,
     stub,
@@ -432,12 +434,30 @@ def test_tracing_needs_langfuse_keys(monkeypatch):
 
 
 def test_a_session_is_a_no_op_without_langfuse_keys_and_works_with_them(monkeypatch):
-    with main.session("T-1"):
+    with main.session("T-1", ["RUN-1"]):
         pass
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
-    with main.session("T-1"):
+    with main.session("T-1", ["RUN-1"]):
         pass
+
+
+def test_a_claims_session_and_tags_are_set_around_its_work(monkeypatch):
+    seen = []
+
+    def record(session_id, tags=None):
+        seen.append((session_id, tags))
+        return nullcontext()
+
+    monkeypatch.setattr(main, "session", record)
+    run_id = new_dispatch()
+    model = stub(*approve_and_pay("CLM-1001"))
+    claim_agent.work_claim("CLM-1001", run_id, model)
+    thread = claim("CLM-1001")["thread_id"]
+    assert seen == [(thread, [run_id])]
+    seen.clear()
+    claim_agent.carry_on("CLM-1001", stub())
+    assert seen == [(thread, None)]
 
 
 def test_importing_the_agent_does_not_load_env():

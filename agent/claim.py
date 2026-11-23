@@ -416,7 +416,7 @@ def work_thread(
     problem = "The agent finished without recording a decision."
     started, clock = datetime.now(UTC), time.monotonic()
     try:
-        with main.session(thread_id):
+        with main.session(thread_id, [run_id] if run_id else None):
             drive(graph, config, claim)
     except WAIT_AND_CARRY_ON:
         raise

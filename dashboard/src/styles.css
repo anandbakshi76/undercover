@@ -112,6 +112,7 @@ pre {
 
 nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -571,6 +572,10 @@ td .mono,
 
 .eval-form h2 {
   margin-top: 0;
+}
+
+.eval-form input {
+  background: var(--subtle);
 }
 
 .run-form select {

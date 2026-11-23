@@ -160,7 +160,7 @@ START ─▶ list_claims ─ fan_out: one Send per claim ─▶ work_claim ─�
 - [x] pytest: a service test: `run_dispatch` creates the run, works it with a stub model in the background, and finishes it
 - [x] vitest: the form starts at 3, limits 1 to 25, and calls `startDispatch` with N; a refusal shows its message; the run panel shows each claim, the cost and the time, the summary when finished and Stopped for a stopped run
 - [x] e2e: starting a dispatch on the dashboard with N=7 reaches the stand-in service with `{"concurrency": 7}`
-- [ ] (deferred to the live app in Phase 6) Playwright MCP: the queue page against a stub dispatch played out through the API (claims in different states, a summary) in light and dark mode, with no horizontal scroll at phone width
+- [x] Playwright MCP, on the live app in Phase 6: the queue page with a real dispatch (claims in different states, a summary), in light and dark mode, with no horizontal scroll at phone width
 - [x] `npm run check` runs the unit checks and e2e green
 
 ## Phase 4: Evaluations
@@ -206,7 +206,7 @@ START ─▶ list_claims ─ fan_out: one Send per claim ─▶ work_claim ─�
 - [x] vitest: the form sends the set, tiny and N; a refusal shows its message
 - [x] vitest: a copy's claim page shows the note and no sign-off form or Run agent button
 - [x] e2e: the evaluation test above, and the start test, pass
-- [ ] (deferred to the live app in Phase 6) Playwright MCP: the Scoreboard and an evaluation's page in light and dark mode, and at phone width with no horizontal scroll
+- [x] Playwright MCP, on the live app in Phase 6: the Scoreboard, an evaluation's page and a copy's claim page in light and dark mode, and at phone width with no horizontal scroll (the header nav now wraps; it overflowed by 14 pixels with its fourth link)
 - [x] `npm run check:ts` passes with coverage of 80% or more, and `npm run e2e` passes
 
 ## Phase 6: Live runs and the handover
@@ -227,11 +227,11 @@ START ─▶ list_claims ─ fan_out: one Send per claim ─▶ work_claim ─�
 
 **Success criteria**
 
-- [ ] the live run steps 1 to 4 above, each ticked with what I saw
-- [ ] the N=25 dispatch carried on the claims left in progress with the same threads and attempts, its claims' start times overlap, and its run time is well under the sum of its claims' times
-- [ ] no claim failed for want of a database connection, and `pg_stat_activity` showed at most 12 connections whose user is `postgres` during the dispatch
-- [ ] a claim held for sign-off waited, and a sign-off paid it within five seconds
-- [ ] both evaluations show on the scoreboard with every measure, and the queue page's counts are the same before and after
-- [ ] Langfuse returns the N=25 dispatch's claims by its tag
-- [ ] `docs/SPEC.md`, `docs/TECH_STACK.md`, `docs/PROCESS.md`, `docs/CODE_STANDARDS.md` and `docs/STATUS.md` describe the product as it now is
-- [ ] `npm run check` passes with `.env` moved out of the way: ruff, pyright, pytest at 80% or more, Prettier, ESLint, tsc, vitest at 80% or more, and Playwright
+- [x] the live run steps 1 to 4 above, with what I saw in `docs/STATUS.md` (the first attempt found a connection-pool race and a tagging bug, both fixed, and the database was reseeded a second time to run the sequence again)
+- [x] the N=25 dispatch carried on the claims left in progress with the same threads and attempts, its 18 claims started within 13 milliseconds, and its run took 85.5 seconds against 1,083.9 seconds of claim time. Claims took 60 seconds each against 29.5 at N=3; the time went to queueing for the 4 + 4 connections (see `docs/STATUS.md`)
+- [x] no claim failed for want of a database connection, and `pg_stat_activity` showed 10 and 9 connections whose user is `postgres` when I sampled, at the start of the N=25 dispatch and of the first evaluation (I did not sample mid-run; the two processes' pools hold 8 at most)
+- [ ] a claim held for sign-off waited, and a sign-off paid it within five seconds. Not met under load: a sign-off during the N=25 dispatch paid in about 6 seconds, because the claim agent waits for the same 4 connections; with nothing running it paid in 2.5 seconds
+- [x] both evaluations show on the scoreboard with every measure (with a third, extra `tiny` run that checked the tags), and the queue page's counts are the same before and after
+- [ ] Langfuse returns the N=25 dispatch's claims by its tag. Not met for that dispatch: its traces were made before the tag fix. After the fix Langfuse returned the 5 claims of an evaluation (EVAL-4b8a7edc) by its tag
+- [x] `docs/SPEC.md`, `docs/TECH_STACK.md`, `docs/PROCESS.md`, `docs/CODE_STANDARDS.md` and `docs/STATUS.md` describe the product as it now is
+- [x] `npm run check` passes with `.env` moved out of the way: ruff, pyright, pytest (169 tests, 98%), Prettier, ESLint, tsc, vitest (52 tests, 99%), and Playwright (11 tests)

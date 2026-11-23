@@ -63,13 +63,19 @@ def tracing(session_id: str, tags: list[str] | None = None) -> RunnableConfig:
     return {"callbacks": [CallbackHandler()], "metadata": metadata}
 
 
-def session(session_id: str) -> AbstractContextManager[Any]:
-    """Put everything traced inside under one Langfuse session, if keys are set."""
+def session(
+    session_id: str, tags: list[str] | None = None
+) -> AbstractContextManager[Any]:
+    """Put everything traced inside under one Langfuse session, with tags.
+
+    A claim worked inside a dispatch has a parent run, so the callback handler
+    leaves its session and tags alone, and they are set here.
+    """
     if not os.getenv("LANGFUSE_SECRET_KEY"):
         return nullcontext()
     from langfuse import propagate_attributes  # noqa: PLC0415
 
-    return propagate_attributes(session_id=session_id)
+    return propagate_attributes(session_id=session_id, tags=tags)
 
 
 def steps(message: BaseMessage) -> list[tuple[str, str]]:

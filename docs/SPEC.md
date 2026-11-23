@@ -20,23 +20,29 @@ Our goal is to handle claims straight through, as accurately as our handlers do.
 
 ## Working the queue
 
-The agent organizes its own work (see `docs/HARNESS.md`):
+Claims arrive in batches, so the agent works many at once (see `docs/SWARM.md`):
 
-- One run works the whole queue: the agent chooses the order and finishes with a short summary for the handlers. A run can be capped at a number of claims, with the rest left waiting, and the agent can also be run on one named claim.
-- It plans the run as a to-do list and keeps it up to date, with each item to do, in progress, done or left for a handler.
-- It hands each claim to a fresh helper that works that one claim from a clean start and reports back in a line.
-- Problems are put right automatically. One bad claim never stops the run or leaves a claim stuck in progress. A claim that fails with an error before it is decided goes back in the queue to be tried again, and a claim that fails twice is left for a handler. Before it finishes, the agent checks that it has not missed a waiting claim within its cap.
-- When the agent approves a payout over the limit, it stops and waits for a handler, keeping everything it has worked out. As soon as a handler signs off on the dashboard, the agent picks the claim up from where it stopped and pays it. Between the sign-off and the payment the claim shows as in progress. If the agent isn't running at that moment, it picks the claim up the next time it runs. The payment records who signed off and when. A handler can only sign off for now.
-- If the agent is stopped partway through a claim, by a crash, a restart or Ctrl-C, it carries on with that claim from where it got to the next time it runs, and that doesn't count as a new attempt. A queue run that was stopped is finished by the next run.
+- On the dashboard a handler starts a dispatch and chooses how many claim agents work at once, from 1 to 25 with 3 to start with. A dispatch works every claim left in progress and every waiting claim, oldest submitted first. Code chooses the claims and keeps track of the run, with no model. Only one dispatch or evaluation runs at a time, and a second start is refused. If the agent's service isn't running, the start says so.
+- Each claim is worked by a claim agent that works that one claim from a clean start.
+- Problems are put right automatically. A claim that hits a rate limit or a timeout waits and carries on from where it got to, as the same attempt, and one that is still hitting them after its waits stays in progress for the next dispatch. A claim that fails with any other error goes back in the queue and the same dispatch tries it once more, and a claim that fails twice is left for a handler. One bad claim never stops the dispatch.
+- When the agent approves a payout over the limit, it stops and waits for a handler, keeping everything it has worked out. As soon as a handler signs off on the dashboard, the agent picks the claim up from where it stopped and pays it. Between the sign-off and the payment the claim shows as in progress. If the agent isn't running at that moment, the next dispatch picks the claim up. The payment records who signed off and when. A handler can only sign off for now.
+- If the agent is stopped partway through a claim, by a crash, a restart or Ctrl-C, it carries on with that claim from where it got to the next time it works it, and that doesn't count as a new attempt. A dispatch that was stopped is finished by the next dispatch.
 - No claim is ever decided or paid twice. A repeat of a decision or payment already recorded for a claim counts as done. A different decision on a decided claim is refused.
+- The agent records the tokens and the cost of each model call and the time it spends working on each claim, which leaves out any wait for a handler's sign-off, against the dispatch or evaluation they belong to.
+
+## Checking the agent's work
+
+- On the Scoreboard page a handler starts an evaluation, with N claim agents at once, on one of two labelled sets (the evaluation set of the queue's 25 claims, or the held-out set), whole or just its five `tiny` claims. An evaluation works its own copies of the claims. The copies never show in the queue, a dispatch never carries them on, and nobody can sign them off.
+- The scoreboard lists the evaluations, newest first, with the decision accuracy, the accuracy (the decision matches and the payout is within a dollar), the cost of mistakes (a wrongful decline costs $1,500, a wrongful approval its payout whether or not it was paid, a needless referral $50, and a wrong amount on a right approval the difference), the straight-through rate, the model cost per claim, the time per claim and the time for the whole run. A claim the agent didn't decide counts as a referral. Each evaluation opens to its claims, with the handler's decision beside the agent's.
 
 ## What the team needs to see
 
 - The queue, with where each claim stands: waiting, in progress, waiting for sign-off, decided or needs a handler.
-- The to-do list for the current run, filling in and being ticked off as the agent works.
+- The current dispatch: each of its claims and where it stands, its model cost and time, and when it finishes a summary built from our records, with no model writing it: how many claims were approved, declined and referred, each payout waiting for a sign-off, and each claim left for a handler or still in progress.
 - Each claim in full, with the agent's decision and its reasons.
 - What the agent is doing on a claim while it works, step by step, including the sections of the wording and the manual it read.
-- The agent's instructions for running the queue and for working a claim, read only.
+- The claim agent's instructions, read only.
+- The scoreboard.
 
 ## Rules
 
