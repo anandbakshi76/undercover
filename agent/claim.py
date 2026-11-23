@@ -2,13 +2,15 @@
 
 import json
 import threading
+import time
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, TypedDict
 from urllib.parse import quote
 
 import httpx
 import openai
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
@@ -140,6 +142,20 @@ def money(amount: float) -> str:
     return f"${amount:,.2f}"
 
 
+def record_usage(claim_id: str, run_id: str | None, reply: BaseMessage) -> None:
+    """Record the tokens and the cost OpenRouter reported for one model reply."""
+    usage = reply.response_metadata.get("token_usage")
+    if not usage:
+        return
+    body = {
+        "run_id": run_id,
+        "prompt_tokens": usage.get("prompt_tokens", 0),
+        "completion_tokens": usage.get("completion_tokens", 0),
+        "cost": usage.get("cost") or 0.0,
+    }
+    main.call("POST", f"/api/claims/{claim_id}/model-calls", body)
+
+
 def after_agent(state: ClaimState) -> str:
     """Run the tools the model asked for, or move on to the decision."""
     return "tools" if state["messages"][-1].tool_calls else "decide"
@@ -158,11 +174,14 @@ def after_decide(state: ClaimState) -> str:
 class Nodes:
     """The graph's nodes, which share the model and the instructions."""
 
-    def __init__(self, llm: BaseChatModel, instructions: str) -> None:
+    def __init__(
+        self, llm: BaseChatModel, instructions: str, run_id: str | None = None
+    ) -> None:
         self.system = SystemMessage(instructions)
+        self.run_id = run_id
         self.model_with_tools = llm.bind_tools(TOOLS)
         self.decider = llm.with_structured_output(
-            ClaimDecision, method="function_calling"
+            ClaimDecision, method="function_calling", include_raw=True
         )
 
     def agent(self, state: ClaimState) -> dict[str, Any]:
@@ -170,6 +189,7 @@ class Nodes:
         if state["model_calls"] >= MODEL_CALL_LIMIT:
             raise RuntimeError(f"The agent made {MODEL_CALL_LIMIT} model calls.")
         reply = self.model_with_tools.invoke([self.system, *state["messages"]])
+        record_usage(state["claim_id"], self.run_id, reply)
         return {"messages": [reply], "model_calls": state["model_calls"] + 1}
 
     def decide(self, state: ClaimState) -> dict[str, Any]:
@@ -183,7 +203,11 @@ class Nodes:
                 "rationale": made["reason"],
             }
         asked = [self.system, *state["messages"], HumanMessage("Record your decision.")]
-        result = ClaimDecision.model_validate(self.decider.invoke(asked))
+        answer: Any = self.decider.invoke(asked)
+        record_usage(claim_id, self.run_id, answer["raw"])
+        if answer["parsing_error"]:
+            raise answer["parsing_error"]
+        result = ClaimDecision.model_validate(answer["parsed"])
         body = {
             "decision": result.decision,
             "payout": result.payout,
@@ -234,10 +258,13 @@ class Nodes:
 
 
 def claim_graph(
-    llm: BaseChatModel, saver: BaseCheckpointSaver, instructions: str
+    llm: BaseChatModel,
+    saver: BaseCheckpointSaver,
+    instructions: str,
+    run_id: str | None = None,
 ) -> Any:
     """Build the claim graph with its checkpointer."""
-    nodes = Nodes(llm, instructions)
+    nodes = Nodes(llm, instructions, run_id)
     delay = main.RETRY_DELAY
     provider = RetryPolicy(max_attempts=3, initial_interval=delay, retry_on=Exception)
     backend = RetryPolicy(
@@ -349,21 +376,25 @@ def carry_on(
     claim_id: str,
     llm: BaseChatModel | None = None,
     saver: BaseCheckpointSaver | None = None,
+    run_id: str | None = None,
 ) -> str:
     """Work a claim from its last checkpoint, one thread at a time per claim."""
     with LOCKS.setdefault(claim_id, threading.Lock()):
-        return work_thread(claim_id, llm, saver)
+        return work_thread(claim_id, llm, saver, run_id)
 
 
 def work_thread(
-    claim_id: str, llm: BaseChatModel | None, saver: BaseCheckpointSaver | None
+    claim_id: str,
+    llm: BaseChatModel | None,
+    saver: BaseCheckpointSaver | None,
+    run_id: str | None,
 ) -> str:
     """Work a claim from its last checkpoint, release it if it fails, and report."""
     claim = main.call("GET", f"/api/claims/{claim_id}")
     thread_id = claim["thread_id"]
     instructions = main.call("GET", "/api/instructions")["claim"]
     graph = claim_graph(
-        llm or main.model(), saver or checkpoints.checkpointer(), instructions
+        llm or main.model(), saver or checkpoints.checkpointer(), instructions, run_id
     )
     config = (
         main.tracing(thread_id)
@@ -371,11 +402,22 @@ def work_thread(
         | {"recursion_limit": RECURSION_LIMIT}
     )
     problem = "The agent finished without recording a decision."
+    started, clock = datetime.now(UTC), time.monotonic()
     try:
         with main.session(thread_id):
             drive(graph, config, claim)
     except Exception as error:
         problem = f"The agent stopped with an error: {error}."
+    finally:
+        main.call(
+            "POST",
+            f"/api/claims/{claim_id}/work-time",
+            {
+                "run_id": run_id,
+                "started_at": started.isoformat(timespec="milliseconds"),
+                "seconds": time.monotonic() - clock,
+            },
+        )
     claim = main.call("POST", f"/api/claims/{claim_id}/release", {"problem": problem})
     return report(claim, problem)
 
@@ -393,4 +435,4 @@ def work_claim(
     started = main.call("POST", f"/api/claims/{claim_id}/start", {"run_id": run_id})
     if "detail" in started:
         return f"{claim_id}: not started. {started['detail']}"
-    return carry_on(claim_id, llm, saver)
+    return carry_on(claim_id, llm, saver, run_id)

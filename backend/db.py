@@ -93,6 +93,27 @@ steps = Table(
     Column("created_at", Text, nullable=False),
 )
 
+model_calls = Table(
+    "model_calls",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("claim_id", Text, nullable=False),
+    Column("run_id", Text),
+    Column("created_at", Text, nullable=False),
+    Column("prompt_tokens", Integer, nullable=False),
+    Column("completion_tokens", Integer, nullable=False),
+    Column("cost", Float, nullable=False),
+)
+work_time = Table(
+    "work_time",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("claim_id", Text, nullable=False),
+    Column("run_id", Text),
+    Column("started_at", Text, nullable=False),
+    Column("seconds", Float, nullable=False),
+)
+
 RECORDS = {
     "policy": ("policies.json", "policy_id"),
     "customer": ("customers.json", "customer_id"),

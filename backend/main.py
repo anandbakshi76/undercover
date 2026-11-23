@@ -13,10 +13,18 @@ from uuid import uuid4
 import httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import Connection, RowMapping, insert, select, update
+from sqlalchemy import Connection, RowMapping, func, insert, select, update
 
 from backend import db, documents, payout
-from backend.db import claims, records, run_claims, runs, steps
+from backend.db import (
+    claims,
+    model_calls,
+    records,
+    run_claims,
+    runs,
+    steps,
+    work_time,
+)
 
 Row = RowMapping
 
@@ -115,11 +123,26 @@ def list_claims() -> list[dict[str, Any]]:
     return queue
 
 
+def claim_totals(connection: Connection, claim_id: str) -> dict[str, float]:
+    cost = connection.execute(
+        select(func.coalesce(func.sum(model_calls.c.cost), 0.0)).where(
+            model_calls.c.claim_id == claim_id
+        )
+    ).scalar()
+    seconds = connection.execute(
+        select(func.coalesce(func.sum(work_time.c.seconds), 0.0)).where(
+            work_time.c.claim_id == claim_id
+        )
+    ).scalar()
+    return {"cost": float(cost or 0), "seconds": float(seconds or 0)}
+
+
 @app.get("/api/claims/{claim_id}", operation_id="get_claim")
 def get_claim(claim_id: str) -> dict[str, Any]:
-    """Get one claim in full, with its decision, sign-off and payment."""
+    """Get one claim in full, with its decision, sign-off, payment, cost and time."""
     with db.connect() as connection:
-        return claim_view(claim_row(connection, claim_id))
+        view = claim_view(claim_row(connection, claim_id))
+        return view | claim_totals(connection, claim_id)
 
 
 @app.get("/api/policies/{policy_id}", operation_id="get_policy")
@@ -228,6 +251,19 @@ class Decision(BaseModel):
     policy_section: str = Field(min_length=1)
 
 
+class ModelCall(BaseModel):
+    run_id: str | None
+    prompt_tokens: int = Field(ge=0)
+    completion_tokens: int = Field(ge=0)
+    cost: float = Field(ge=0)
+
+
+class WorkTime(BaseModel):
+    run_id: str | None
+    started_at: str = Field(min_length=1)
+    seconds: float = Field(ge=0)
+
+
 class Payment(BaseModel):
     amount: float = Field(gt=0)
 
@@ -238,6 +274,10 @@ class SignOff(BaseModel):
 
 def now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def now_ms() -> str:
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 def money(amount: float) -> str:
@@ -305,6 +345,30 @@ def list_steps(claim_id: str) -> list[dict[str, Any]]:
             .all()
         )
     return [dict(row) for row in rows]
+
+
+@app.post("/api/claims/{claim_id}/model-calls", operation_id="record_model_call")
+def record_model_call(claim_id: str, call: ModelCall) -> dict[str, str]:
+    """Record the tokens and cost of one model call on a claim, with its run."""
+    with db.connect() as connection:
+        claim_row(connection, claim_id)
+        connection.execute(
+            insert(model_calls).values(
+                claim_id=claim_id, created_at=now_ms(), **call.model_dump()
+            )
+        )
+    return {"status": "recorded"}
+
+
+@app.post("/api/claims/{claim_id}/work-time", operation_id="record_work_time")
+def record_work_time(claim_id: str, work: WorkTime) -> dict[str, str]:
+    """Record one stretch of the agent's work on a claim, with its run."""
+    with db.connect() as connection:
+        claim_row(connection, claim_id)
+        connection.execute(
+            insert(work_time).values(claim_id=claim_id, **work.model_dump())
+        )
+    return {"status": "recorded"}
 
 
 def same_decision(row: Row, decision: Decision) -> bool:

@@ -327,12 +327,14 @@ def test_model_name(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.delenv("MODEL_NAME", raising=False)
     default = main.model()
-    assert default.model_name == "deepseek/deepseek-v4.1-flash"
+    assert default.model_name == "openai/gpt-6-luna"
     assert default.reasoning_effort == "low"
+    assert main.model_settings() == ("openai/gpt-6-luna", "low")
     monkeypatch.setenv("MODEL_NAME", "openrouter/free")
     chosen = main.model()
     assert chosen.model_name == "openrouter/free"
     assert chosen.reasoning_effort is None
+    assert main.model_settings() == ("openrouter/free", "none")
 
 
 def test_the_agent_never_reads_the_data_folder():

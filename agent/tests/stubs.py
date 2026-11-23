@@ -6,6 +6,8 @@ from pydantic import Field
 
 from agent import main
 
+USAGE = {"prompt_tokens": 100, "completion_tokens": 20, "cost": 0.01}
+
 
 class StubModel(GenericFakeChatModel):
     """A chat model that gives scripted replies and remembers what it was sent."""
@@ -21,7 +23,10 @@ class StubModel(GenericFakeChatModel):
         if isinstance(reply, BaseException):
             raise reply
         self.messages = iter([reply, *self.messages])
-        return super()._generate(messages, stop, run_manager, **kwargs)
+        result = super()._generate(messages, stop, run_manager, **kwargs)
+        for generation in result.generations:
+            generation.message.response_metadata["token_usage"] = USAGE
+        return result
 
 
 def stub(*replies):

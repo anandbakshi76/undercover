@@ -2,6 +2,10 @@
 
 The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md`. The harness from `docs/HARNESS.md` is built on top of it (`docs/PLAN_HARNESS.md`), and durable state from `docs/DURABLE.md` on top of that (`docs/PLAN_DURABLE.md`, all six phases done). Durable state moved the records to Supabase and changed the schema, so a database from the harness needs `uv run --env-file .env -m backend.db --reset` once.
 
+## Swarm build in progress
+
+`docs/PLAN_SWARM.md` is being built phase by phase; the sections below describe the product as of durable state until the last phase rewrites them. Done so far: the agent's default model is `openai/gpt-6-luna` (low reasoning effort), `record_model_call` and `record_work_time` store each model call's tokens and cost and each stretch of work on a claim, `get_claim` shows a claim's `cost` and `seconds`, and `npm run seed` reseeds the database.
+
 ## What's built
 
 - `backend/`: FastAPI and SQLAlchemy Core. With `DATABASE_URL` in its environment it uses the `undercover` schema on Supabase (at most 4 connections); without it, SQLite (`backend/undercover.db`, or the file in `UNDERCOVER_DB`), which the tests use. Both are seeded from `data/` on first start, leaving out `data/evals/` and `data/security/`.
