@@ -1,25 +1,24 @@
-"""Run the UnderCover Agent from the command line against a running backend."""
+"""Work one claim from the command line against a running backend."""
 
 import argparse
 
 from dotenv import load_dotenv
 
-from agent import claim, main, queue_agent, resume
+from agent import claim, main
 
 
 def cli(argv: list[str] | None = None) -> str:
-    """Run the queue capped at a number of claims, or work one named claim."""
-    parser = argparse.ArgumentParser(description="Run the UnderCover Agent.")
-    choice = parser.add_mutually_exclusive_group(required=True)
-    choice.add_argument("--limit", type=int, help="run the queue on this many claims")
-    choice.add_argument("--claim", help="work this one claim")
-    args = parser.parse_args(argv)
-    for line in resume.resume():
-        print(line)
-    run = main.call("POST", "/api/runs", {"limit": args.limit or 1})
-    if args.limit:
-        return queue_agent.run_queue(run["run_id"])
-    line = claim.work_claim(run["run_id"], args.claim)
+    """Work one named claim: start it if it is waiting, or carry it on."""
+    parser = argparse.ArgumentParser(description="Work one claim.")
+    parser.add_argument("claim_id", help="the claim to work, such as CLM-1001")
+    claim_id = parser.parse_args(argv).claim_id
+    found = main.call("GET", f"/api/claims/{claim_id}")
+    if found["status"] == "in_progress":
+        return claim.carry_on(claim_id)
+    if found["status"] != "waiting":
+        return claim.report(found, "")
+    run = main.call("POST", f"/api/claims/{claim_id}/start-run")
+    line = claim.work_claim(claim_id, run["run_id"])
     main.call(
         "POST",
         f"/api/runs/{run['run_id']}/finish",

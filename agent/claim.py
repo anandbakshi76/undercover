@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 import httpx
 import openai
+from langchain_core.exceptions import ModelRateLimitError, ModelTimeoutError
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
@@ -26,6 +27,7 @@ MODEL_CALL_LIMIT = 30
 MAX_ATTEMPTS = 2
 RECURSION_LIMIT = 100
 LOCKS: dict[str, threading.Lock] = {}
+WAIT_AND_CARRY_ON = (ModelRateLimitError, ModelTimeoutError)
 
 Document = Literal["policy_wording", "claims_manual"]
 
@@ -372,6 +374,11 @@ def drive(graph: Any, config: Any, claim: dict[str, Any]) -> None:
         post_step(claim["claim_id"], "reply", text)
 
 
+def is_working(claim_id: str) -> bool:
+    """Say whether this process is working a claim right now."""
+    return claim_id in LOCKS and LOCKS[claim_id].locked()
+
+
 def carry_on(
     claim_id: str,
     llm: BaseChatModel | None = None,
@@ -394,10 +401,10 @@ def work_thread(
     thread_id = claim["thread_id"]
     instructions = main.call("GET", "/api/instructions")["claim"]
     graph = claim_graph(
-        llm or main.model(), saver or checkpoints.checkpointer(), instructions, run_id
+        llm or main.model(), saver or checkpoints.saver(), instructions, run_id
     )
     config = (
-        main.tracing(thread_id)
+        main.tracing(thread_id, [run_id] if run_id else None)
         | {"configurable": {"thread_id": thread_id}}
         | {"recursion_limit": RECURSION_LIMIT}
     )
@@ -406,6 +413,8 @@ def work_thread(
     try:
         with main.session(thread_id):
             drive(graph, config, claim)
+    except WAIT_AND_CARRY_ON:
+        raise
     except Exception as error:
         problem = f"The agent stopped with an error: {error}."
     finally:
@@ -423,15 +432,19 @@ def work_thread(
 
 
 def work_claim(
-    run_id: str,
     claim_id: str,
+    run_id: str,
     llm: BaseChatModel | None = None,
     saver: BaseCheckpointSaver | None = None,
 ) -> str:
-    """Start a waiting claim in a run, work it with a claim agent, and report."""
-    worked = main.call("GET", f"/api/claims/{claim_id}")
-    if worked.get("run_id") == run_id and worked.get("decision") is not None:
-        return report(worked, "")
+    """Carry on a claim in progress or start a waiting one, work it, and report.
+
+    A rate limit or a timeout that outlasts the graph's retries is raised
+    without settling the claim, so a retry carries on from its last step.
+    """
+    found = main.call("GET", f"/api/claims/{claim_id}")
+    if found["status"] not in ("waiting", "in_progress"):
+        return report(found, "")
     started = main.call("POST", f"/api/claims/{claim_id}/start", {"run_id": run_id})
     if "detail" in started:
         return f"{claim_id}: not started. {started['detail']}"

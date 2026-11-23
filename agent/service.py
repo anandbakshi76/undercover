@@ -3,15 +3,10 @@
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from pydantic import BaseModel, Field
 
-from agent import claim, main, queue_agent, resume
+from agent import claim, main
 
 app = FastAPI(title="UnderCover Agent")
-
-
-class RunLimit(BaseModel):
-    limit: int = Field(ge=1)
 
 
 def start(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
@@ -23,14 +18,8 @@ def start(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
     return response.json()
 
 
-def work_queue(run_id: str) -> None:
-    resume.resume(skip_run_id=run_id)
-    queue_agent.run_queue(run_id)
-
-
 def work_one(run_id: str, claim_id: str) -> None:
-    resume.resume()
-    claim.work_claim(run_id, claim_id)
+    claim.work_claim(claim_id, run_id)
     main.call(
         "POST", f"/api/runs/{run_id}/finish", {"status": "finished", "summary": ""}
     )
@@ -40,14 +29,6 @@ def work_one(run_id: str, claim_id: str) -> None:
 def health() -> dict[str, str]:
     """Check that the agent's service is running."""
     return {"status": "ok"}
-
-
-@app.post("/api/queue/run", operation_id="run_queue")
-def run_queue(run_limit: RunLimit, background: BackgroundTasks) -> dict[str, Any]:
-    """Start a run of the queue capped at a number of claims, and work it."""
-    run = start("POST", "/api/runs", {"limit": run_limit.limit})
-    background.add_task(work_queue, run["run_id"])
-    return run
 
 
 @app.post("/api/claims/{claim_id}/run", operation_id="run_claim")

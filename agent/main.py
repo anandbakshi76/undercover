@@ -1,4 +1,4 @@
-"""The UnderCover Agent: what the queue agent and the claim agent share."""
+"""The UnderCover Agent: what the dispatcher and the claim agent share."""
 
 import json
 import os
@@ -51,16 +51,16 @@ def model() -> ChatOpenAI:
     )
 
 
-def tracing(session_id: str) -> RunnableConfig:
-    """Trace a run in Langfuse under a session, if the Langfuse keys are set."""
+def tracing(session_id: str, tags: list[str] | None = None) -> RunnableConfig:
+    """Trace a run in Langfuse under a session, with tags, if the keys are set."""
     if not os.getenv("LANGFUSE_SECRET_KEY"):
         return {}
     from langfuse.langchain import CallbackHandler  # noqa: PLC0415
 
-    return {
-        "callbacks": [CallbackHandler()],
-        "metadata": {"langfuse_session_id": session_id},
-    }
+    metadata: dict[str, Any] = {"langfuse_session_id": session_id}
+    if tags:
+        metadata["langfuse_tags"] = tags
+    return {"callbacks": [CallbackHandler()], "metadata": metadata}
 
 
 def session(session_id: str) -> AbstractContextManager[Any]:

@@ -33,6 +33,7 @@ DATA = Path(__file__).resolve().parent.parent / "data"
 DEFAULT_DB = Path(__file__).resolve().parent / "undercover.db"
 SCHEMA = "undercover"
 MAX_CONNECTIONS = 4
+WAIT_FOR_CONNECTION = 300
 
 metadata = MetaData()
 
@@ -68,12 +69,15 @@ runs = Table(
     Column("id", Integer, primary_key=True),
     Column("run_id", Text, nullable=False, unique=True),
     Column("kind", Text, nullable=False),
-    Column("claim_limit", Integer, nullable=False),
+    Column("concurrency", Integer, nullable=False),
     Column("status", Text, nullable=False),
-    Column("todos", Text, nullable=False, server_default="[]"),
     Column("summary", Text),
     Column("started_at", Text, nullable=False),
     Column("finished_at", Text),
+    Column("evaluation_set", Text),
+    Column("tiny", Integer),
+    Column("model", Text),
+    Column("reasoning_effort", Text),
 )
 run_claims = Table(
     "run_claims",
@@ -150,6 +154,7 @@ def engine() -> Engine:
                 url,
                 pool_size=MAX_CONNECTIONS,
                 max_overflow=0,
+                pool_timeout=WAIT_FOR_CONNECTION,
                 pool_pre_ping=True,
                 connect_args={"options": f"-c search_path={SCHEMA}"},
             )

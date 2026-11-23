@@ -8,22 +8,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("shows both sets of instructions read only", async () => {
-  mockApi({
-    "GET /api/instructions": {
-      queue: "Plan the run as a to-do list.",
-      claim: "Decide one claim.",
-    },
-  });
+it("shows the claim agent's instructions read only", async () => {
+  mockApi({ "GET /api/instructions": { claim: "Decide one claim." } });
   render(<Instructions />);
-  const queue = await screen.findByRole("region", {
-    name: "Running the queue",
-  });
-  expect(
-    within(queue).getByText("Plan the run as a to-do list."),
-  ).toBeDefined();
-  const claim = screen.getByRole("region", { name: "Working a claim" });
+  const claim = await screen.findByRole("region", { name: "Working a claim" });
   expect(within(claim).getByText("Decide one claim.")).toBeDefined();
+  expect(
+    screen.queryByRole("region", { name: "Running the queue" }),
+  ).toBeNull();
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("button")).toBeNull();
 });

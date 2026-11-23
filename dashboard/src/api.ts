@@ -80,31 +80,7 @@ export interface Step {
   created_at: string;
 }
 
-export type TodoStatus = "to_do" | "in_progress" | "done" | "left_for_handler";
-
-export interface Todo {
-  content: string;
-  status: TodoStatus;
-}
-
-export type RunStatus = "running" | "finished" | "failed";
-
-export interface Run {
-  run_id: string;
-  kind: "queue" | "claim";
-  claim_limit: number;
-  status: RunStatus;
-  todos: Todo[];
-  summary: string | null;
-  started_at: string;
-  finished_at: string | null;
-  claims_worked: string[];
-  claims_left: number;
-  waiting_in_reach: string[];
-}
-
 export interface Instructions {
-  queue: string;
   claim: string;
 }
 
@@ -148,11 +124,9 @@ export const api = {
   policy: (policyId: string) => request<Policy>(`/api/policies/${policyId}`),
   steps: (claimId: string) => request<Step[]>(`/api/claims/${claimId}/steps`),
   instructions: () => request<Instructions>("/api/instructions"),
-  latestRun: () => request<Run | null>("/api/queue/latest-run"),
   handlers: () => request<Handler[]>("/api/handlers"),
   runAgent: (claimId: string) =>
     post<{ status: string }>(`/api/claims/${claimId}/run`),
-  runQueue: (limit: number) => post<Run>("/api/queue/run", { limit }),
   signOff: (claimId: string, handlerId: string) =>
     post<ClaimDetail>(`/api/claims/${claimId}/sign-off`, {
       handler_id: handlerId,

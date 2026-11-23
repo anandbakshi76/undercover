@@ -220,11 +220,8 @@ def search_documents(text: str) -> list[dict[str, str]]:
 
 @app.get("/api/instructions", operation_id="get_instructions")
 def get_instructions() -> dict[str, str]:
-    """Get the UnderCover Agent's instructions for running the queue and a claim."""
-    return {
-        kind: (INSTRUCTIONS / f"{kind}.md").read_text(encoding="utf-8")
-        for kind in ["queue", "claim"]
-    }
+    """Get the claim agent's instructions."""
+    return {"claim": (INSTRUCTIONS / "claim.md").read_text(encoding="utf-8")}
 
 
 @app.get("/api/handlers", operation_id="list_handlers")
@@ -354,7 +351,10 @@ def record_model_call(claim_id: str, call: ModelCall) -> dict[str, str]:
         claim_row(connection, claim_id)
         connection.execute(
             insert(model_calls).values(
-                claim_id=claim_id, created_at=now_ms(), **call.model_dump()
+                claim_id=claim_id,
+                created_at=now_ms(),
+                **call.model_dump(exclude={"run_id"}),
+                run_id=usage_run(connection, call.run_id),
             )
         )
     return {"status": "recorded"}
@@ -366,7 +366,11 @@ def record_work_time(claim_id: str, work: WorkTime) -> dict[str, str]:
     with db.connect() as connection:
         claim_row(connection, claim_id)
         connection.execute(
-            insert(work_time).values(claim_id=claim_id, **work.model_dump())
+            insert(work_time).values(
+                claim_id=claim_id,
+                **work.model_dump(exclude={"run_id"}),
+                run_id=usage_run(connection, work.run_id),
+            )
         )
     return {"status": "recorded"}
 
@@ -475,21 +479,13 @@ def sign_off(
 
 
 MAX_ATTEMPTS = 2
-
-TodoStatus = Literal["to_do", "in_progress", "done", "left_for_handler"]
-
-
-class Todo(BaseModel):
-    content: str = Field(min_length=1)
-    status: TodoStatus
+RUN_KINDS = ["dispatch", "evaluation"]
 
 
-class Todos(BaseModel):
-    todos: list[Todo]
-
-
-class RunLimit(BaseModel):
-    limit: int = Field(ge=1)
+class NewDispatch(BaseModel):
+    concurrency: int = Field(ge=1, le=25)
+    model: str = Field(min_length=1)
+    reasoning_effort: str = Field(min_length=1)
 
 
 class RunEnd(BaseModel):
@@ -516,16 +512,6 @@ def run_row(connection: Connection, run_id: str) -> Row:
     return row
 
 
-def waiting_ids(connection: Connection) -> list[str]:
-    return list(
-        connection.execute(
-            select(claims.c.claim_id)
-            .where(claims.c.status == "waiting")
-            .order_by(claims.c.claim_id)
-        ).scalars()
-    )
-
-
 def worked_ids(connection: Connection, run_id: str) -> list[str]:
     return list(
         connection.execute(
@@ -538,38 +524,66 @@ def worked_ids(connection: Connection, run_id: str) -> list[str]:
 
 def run_view(connection: Connection, run_id: str) -> dict[str, Any]:
     row = run_row(connection, run_id)
-    worked = worked_ids(connection, run_id)
-    waiting = waiting_ids(connection)
-    claims_left = max(row["claim_limit"] - len(worked), 0)
-    retries = [claim_id for claim_id in worked if claim_id in waiting]
-    others = [claim_id for claim_id in waiting if claim_id not in worked]
     return {
         "run_id": row["run_id"],
         "kind": row["kind"],
-        "claim_limit": row["claim_limit"],
+        "concurrency": row["concurrency"],
         "status": row["status"],
-        "todos": json.loads(row["todos"]),
         "summary": row["summary"],
         "started_at": row["started_at"],
         "finished_at": row["finished_at"],
-        "claims_worked": worked,
-        "claims_left": claims_left,
-        "waiting_in_reach": retries + (others if claims_left else []),
+        "model": row["model"],
+        "reasoning_effort": row["reasoning_effort"],
+        "evaluation_set": row["evaluation_set"],
+        "tiny": None if row["tiny"] is None else bool(row["tiny"]),
+        "claims_worked": worked_ids(connection, run_id),
     }
 
 
-def new_run(connection: Connection, kind: str, limit: int) -> str:
+def new_run(
+    connection: Connection,
+    kind: str,
+    concurrency: int,
+    model: str = "",
+    reasoning_effort: str = "",
+) -> str:
+    if (
+        kind in RUN_KINDS
+        and connection.execute(
+            select(runs.c.id).where(
+                runs.c.kind.in_(RUN_KINDS), runs.c.status == "running"
+            )
+        ).first()
+    ):
+        raise HTTPException(409, "A dispatch or evaluation is already running.")
     run_id = f"RUN-{uuid4().hex[:8]}"
     connection.execute(
         insert(runs).values(
             run_id=run_id,
             kind=kind,
-            claim_limit=limit,
+            concurrency=concurrency,
             status="running",
-            started_at=now(),
+            started_at=now_ms(),
+            model=model,
+            reasoning_effort=reasoning_effort,
         )
     )
     return run_id
+
+
+def join_run(connection: Connection, run_id: str, claim_id: str) -> None:
+    if claim_id not in worked_ids(connection, run_id):
+        connection.execute(insert(run_claims).values(run_id=run_id, claim_id=claim_id))
+
+
+def usage_run(connection: Connection, run_id: str | None) -> str | None:
+    """Keep a run id only for a dispatch or an evaluation."""
+    if run_id is None:
+        return None
+    kind = connection.execute(
+        select(runs.c.kind).where(runs.c.run_id == run_id)
+    ).scalar()
+    return run_id if kind in RUN_KINDS else None
 
 
 def start(connection: Connection, run_id: str, claim_id: str) -> None:
@@ -577,18 +591,11 @@ def start(connection: Connection, run_id: str, claim_id: str) -> None:
     if run["status"] != "running":
         raise HTTPException(409, f"Run {run_id} has finished.")
     row = claim_row(connection, claim_id)
-    if row["status"] == "in_progress" and row["run_id"] == run_id:
+    if row["status"] == "in_progress":
+        join_run(connection, run_id, claim_id)
         return
     if row["status"] == "needs_handler":
         raise HTTPException(409, f"Claim {claim_id} is left for a handler.")
-    worked = worked_ids(connection, run_id)
-    if claim_id not in worked and len(worked) >= run["claim_limit"]:
-        limit = run["claim_limit"]
-        raise HTTPException(
-            409,
-            f"This run has reached its cap of {limit} "
-            f"{'claim' if limit == 1 else 'claims'}.",
-        )
     started = connection.execute(
         update(claims)
         .where(claims.c.claim_id == claim_id, claims.c.status == "waiting")
@@ -600,8 +607,7 @@ def start(connection: Connection, run_id: str, claim_id: str) -> None:
     ).rowcount
     if not started:
         raise HTTPException(409, f"Claim {claim_id} is not waiting.")
-    if claim_id not in worked:
-        connection.execute(insert(run_claims).values(run_id=run_id, claim_id=claim_id))
+    join_run(connection, run_id, claim_id)
 
 
 def release(connection: Connection, claim_id: str, problem: str) -> None:
@@ -626,49 +632,54 @@ def end_run(connection: Connection, run_id: str, end: RunEnd) -> None:
     connection.execute(
         update(runs)
         .where(runs.c.run_id == run_id)
-        .values(status=end.status, summary=end.summary, finished_at=now())
+        .values(status=end.status, summary=end.summary, finished_at=now_ms())
     )
 
 
-@app.post("/api/runs", operation_id="start_run")
-def start_run(run_limit: RunLimit) -> dict[str, Any]:
-    """Start a queue run capped at a number of claims, without starting an agent."""
+@app.post("/api/runs/dispatch", operation_id="create_dispatch")
+def create_dispatch(new: NewDispatch) -> dict[str, Any]:
+    """Create a dispatch of the queue, refused while another run is going."""
     with db.connect() as connection:
-        run_id = new_run(connection, "queue", run_limit.limit)
+        run_id = new_run(
+            connection,
+            "dispatch",
+            new.concurrency,
+            new.model,
+            new.reasoning_effort,
+        )
         return run_view(connection, run_id)
-
-
-@app.get("/api/queue/latest-run", operation_id="get_latest_run")
-def get_latest_run() -> dict[str, Any] | None:
-    """Get the latest run of the queue, or null if there has been none."""
-    with db.connect() as connection:
-        run_id = connection.execute(
-            select(runs.c.run_id)
-            .where(runs.c.kind == "queue")
-            .order_by(runs.c.id.desc())
-            .limit(1)
-        ).scalar()
-        return run_view(connection, run_id) if run_id else None
 
 
 @app.get("/api/runs/{run_id}", operation_id="get_run")
 def get_run(run_id: str) -> dict[str, Any]:
-    """Get a run with its to-do list, its claims and the waiting claims in reach."""
+    """Get a run with the claims it has worked."""
     with db.connect() as connection:
         return run_view(connection, run_id)
 
 
-@app.put("/api/runs/{run_id}/todos", operation_id="update_todos")
-def update_todos(run_id: str, todos: Todos) -> dict[str, Any]:
-    """Replace a run's to-do list."""
+@app.get("/api/runs/{run_id}/claims-to-work", operation_id="list_claims_to_work")
+def list_claims_to_work(run_id: str) -> list[str]:
+    """List the claims a run should work: those in progress, then those waiting."""
     with db.connect() as connection:
         run_row(connection, run_id)
-        connection.execute(
-            update(runs)
-            .where(runs.c.run_id == run_id)
-            .values(todos=json.dumps([todo.model_dump() for todo in todos.todos]))
+        rows = (
+            connection.execute(
+                select(claims.c.claim_id, claims.c.status, claims.c.data).where(
+                    claims.c.status.in_(["in_progress", "waiting"])
+                )
+            )
+            .mappings()
+            .all()
         )
-        return run_view(connection, run_id)
+    ordered = sorted(
+        rows,
+        key=lambda r: (
+            r["status"] != "in_progress",
+            json.loads(r["data"])["submitted_on"],
+            r["claim_id"],
+        ),
+    )
+    return [row["claim_id"] for row in ordered]
 
 
 @app.post("/api/runs/{run_id}/finish", operation_id="finish_run")
@@ -678,27 +689,6 @@ def finish_run(run_id: str, end: RunEnd) -> dict[str, Any]:
         run_row(connection, run_id)
         end_run(connection, run_id, end)
         return run_view(connection, run_id)
-
-
-@app.get("/api/queue/waiting", operation_id="list_waiting_claims")
-def list_waiting_claims() -> list[dict[str, Any]]:
-    """List the waiting claims with how many times each has been tried."""
-    with db.connect() as connection:
-        rows = (
-            connection.execute(
-                select(claims.c.data, claims.c.attempts)
-                .where(claims.c.status == "waiting")
-                .order_by(claims.c.claim_id)
-            )
-            .mappings()
-            .all()
-        )
-    keys = ["claim_id", "claim_type", "summary", "amount_claimed", "submitted_on"]
-    return [
-        {key: json.loads(row["data"])[key] for key in keys}
-        | {"attempts": row["attempts"]}
-        for row in rows
-    ]
 
 
 @app.post("/api/claims/{claim_id}/start", operation_id="start_claim")
@@ -721,47 +711,15 @@ def release_claim(claim_id: str, release_input: Release) -> dict[str, Any]:
 def start_claim_run(claim_id: str) -> dict[str, str]:
     """Start a run on one waiting claim, without starting an agent."""
     with db.connect() as connection:
-        claim_row(connection, claim_id)
+        row = claim_row(connection, claim_id)
+        if row["status"] != "waiting":
+            raise HTTPException(409, f"Claim {claim_id} is not waiting.")
         run_id = new_run(connection, "claim", 1)
         start(connection, run_id, claim_id)
     return {"status": "in_progress", "run_id": run_id}
-
-
-@app.get("/api/queue/unfinished", operation_id="list_unfinished_claims")
-def list_unfinished_claims() -> list[dict[str, Any]]:
-    """List the claims the agent still owes work, with their runs and threads."""
-    with db.connect() as connection:
-        rows = (
-            connection.execute(
-                select(claims.c.claim_id, claims.c.run_id, claims.c.thread_id)
-                .where(claims.c.status == "in_progress", claims.c.thread_id.isnot(None))
-                .order_by(claims.c.claim_id)
-            )
-            .mappings()
-            .all()
-        )
-    return [dict(row) for row in rows]
-
-
-@app.get("/api/queue/running-runs", operation_id="list_running_runs")
-def list_running_runs() -> list[dict[str, Any]]:
-    """List the queue runs that are still marked as running."""
-    with db.connect() as connection:
-        run_ids = connection.execute(
-            select(runs.c.run_id)
-            .where(runs.c.kind == "queue", runs.c.status == "running")
-            .order_by(runs.c.id)
-        ).scalars()
-        return [run_view(connection, run_id) for run_id in list(run_ids)]
 
 
 @app.post("/api/claims/{claim_id}/run", operation_id="run_agent")
 def run_agent(claim_id: str) -> dict[str, Any]:
     """Start the UnderCover Agent on one waiting claim."""
     return forward(f"/api/claims/{claim_id}/run")
-
-
-@app.post("/api/queue/run", operation_id="run_queue")
-def run_queue(run_limit: RunLimit) -> dict[str, Any]:
-    """Start the UnderCover Agent on the queue, capped at a number of claims."""
-    return forward("/api/queue/run", {"limit": run_limit.limit})

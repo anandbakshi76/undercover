@@ -35,7 +35,6 @@ describe("App", () => {
   it("shows the queue by default", async () => {
     mockApi({
       "GET /api/claims": [summary()],
-      "GET /api/queue/latest-run": null,
     });
     render(<App />);
     expect(
@@ -46,7 +45,6 @@ describe("App", () => {
   it("shows the instructions page", async () => {
     mockApi({
       "GET /api/instructions": {
-        queue: "Run the queue.",
         claim: "Decide claims.",
       },
     });
@@ -58,7 +56,6 @@ describe("App", () => {
   it("shows a claim page and follows the hash", async () => {
     mockApi({
       "GET /api/claims": [summary()],
-      "GET /api/queue/latest-run": null,
       "GET /api/claims/CLM-1001": claim(),
       "GET /api/claims/CLM-1001/steps": [],
       "GET /api/policies/POL-2001": policy,
@@ -80,7 +77,6 @@ describe("dark mode", () => {
   it("starts in the theme set on the page", async () => {
     mockApi({
       "GET /api/claims": [summary()],
-      "GET /api/queue/latest-run": null,
     });
     document.documentElement.dataset.theme = "dark";
     render(<App />);
@@ -91,7 +87,6 @@ describe("dark mode", () => {
   it("switches between light and dark and remembers the choice", async () => {
     mockApi({
       "GET /api/claims": [summary()],
-      "GET /api/queue/latest-run": null,
     });
     render(<App />);
     const toggle = await screen.findByRole("button", { name: "Dark mode" });

@@ -4,7 +4,7 @@ The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md`. The har
 
 ## Swarm build in progress
 
-`docs/PLAN_SWARM.md` is being built phase by phase; the sections below describe the product as of durable state until the last phase rewrites them. Done so far: the agent's default model is `openai/gpt-6-luna` (low reasoning effort), `record_model_call` and `record_work_time` store each model call's tokens and cost and each stretch of work on a claim, `get_claim` shows a claim's `cost` and `seconds`, and `npm run seed` reseeds the database.
+`docs/PLAN_SWARM.md` is being built phase by phase; the sections below describe the product as of durable state until the last phase rewrites them. Done so far: the agent's default model is `openai/gpt-6-luna` (low reasoning effort), `record_model_call` and `record_work_time` store each model call's tokens and cost and each stretch of work on a claim, `get_claim` shows a claim's `cost` and `seconds`, and `npm run seed` reseeds the database. The dispatcher (`agent/dispatcher.py`, a LangGraph graph with no model: `list_claims`, one `Send` per claim, a `work_claim` worker with a `RetryPolicy` for rate limits and timeouts, and an `error_handler` that leaves a claim in progress) replaces the queue agent, which, its to-do list, `agent/resume.py` and `uv run -m agent --limit` are gone. `uv run -m agent CLM-1001` works one claim. Each claim run gets its own `PostgresSaver` on the process's shared pool (`checkpoints.saver()`), and traces are tagged with the run in `langfuse_tags`. The dashboard's queue page has no run form until the next phase.
 
 ## What's built
 

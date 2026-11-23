@@ -13,6 +13,7 @@ from psycopg_pool import ConnectionPool
 
 SCHEMA = "undercover"
 MAX_CONNECTIONS = 4
+WAIT_FOR_CONNECTION = 300
 
 
 SETTINGS: dict[str, Any] = {
@@ -26,20 +27,39 @@ SETTINGS: dict[str, Any] = {
 def make_pool(url: str) -> ConnectionPool:
     """Make a closed pool of at most 4 connections with LangGraph's settings."""
     return ConnectionPool(
-        url, min_size=1, max_size=MAX_CONNECTIONS, open=False, kwargs=SETTINGS
+        url,
+        min_size=1,
+        max_size=MAX_CONNECTIONS,
+        open=False,
+        timeout=WAIT_FOR_CONNECTION,
+        kwargs=SETTINGS,
     )
 
 
 @cache
-def checkpointer() -> BaseCheckpointSaver:
-    """Return this process's checkpointer, made on first use."""
-    url = os.getenv("DATABASE_URL")
-    if not url:
-        return InMemorySaver()
+def memory() -> InMemorySaver:
+    """Return the one in-memory saver, used without DATABASE_URL."""
+    return InMemorySaver()
+
+
+@cache
+def shared_pool() -> ConnectionPool:
+    """Return this process's pool, made on first use with the tables set up."""
+    url = os.environ["DATABASE_URL"]
     with psycopg.connect(url, autocommit=True) as connection:
         connection.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
     pool = make_pool(url)
     pool.open()
-    saver = PostgresSaver(pool)  # pyright: ignore[reportArgumentType]
-    saver.setup()
-    return saver
+    PostgresSaver(pool).setup()  # pyright: ignore[reportArgumentType]
+    return pool
+
+
+def saver() -> BaseCheckpointSaver:
+    """Return a saver for one claim run, on the process's shared pool.
+
+    A PostgresSaver holds a lock around every read and write, so claim runs
+    that shared one would take turns.
+    """
+    if not os.getenv("DATABASE_URL"):
+        return memory()
+    return PostgresSaver(shared_pool())  # pyright: ignore[reportArgumentType]

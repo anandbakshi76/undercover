@@ -23,7 +23,7 @@ def fresh_backend(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "RETRY_DELAY", 0)
     down = httpx.Client(base_url="http://agent", transport=httpx.MockTransport(refuse))
     monkeypatch.setattr(backend, "agent_client", lambda: down)
-    checkpoints.checkpointer.cache_clear()
+    checkpoints.memory.cache_clear()
 
 
 @pytest.fixture(autouse=True)

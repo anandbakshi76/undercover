@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg.rows import dict_row
 
 from agent import checkpoints, main
@@ -84,7 +85,7 @@ def test_a_claim_is_looked_up_decided_and_paid():
         AIMessage(content="Approve $420.00."),
         decide("CLM-1001"),
     )
-    line = claim_agent.work_claim(new_run(1), "CLM-1001", model)
+    line = claim_agent.work_claim("CLM-1001", new_run(1), model)
     assert line == "CLM-1001: approved, $420.00 paid"
     decided = claim("CLM-1001")
     assert decided["status"] == "decided"
@@ -112,7 +113,7 @@ def test_the_payout_tool_is_used_and_shown_as_a_step():
         AIMessage(content="Approve $250.00."),
         decide("CLM-1001", payout=250.0),
     )
-    assert claim_agent.work_claim(new_run(1), "CLM-1001", model).endswith("paid")
+    assert claim_agent.work_claim("CLM-1001", new_run(1), model).endswith("paid")
     texts = [step["text"] for step in recorded_steps("CLM-1001")]
     assert any(t.startswith("calculate_payout: ") and "250.0" in t for t in texts)
 
@@ -123,14 +124,14 @@ def test_a_section_that_does_not_exist_is_not_recorded_as_read():
         AIMessage(content="Nothing there."),
         decide("CLM-1001", "refer"),
     )
-    claim_agent.work_claim(new_run(1), "CLM-1001", model)
+    claim_agent.work_claim("CLM-1001", new_run(1), model)
     assert "section" not in [step["kind"] for step in recorded_steps("CLM-1001")]
 
 
 def test_a_payout_over_the_limit_pauses_for_sign_off():
     saver = InMemorySaver()
     model = stub(*approve_and_pay("CLM-1002", payout=1250.0))
-    line = claim_agent.work_claim(new_run(1), "CLM-1002", model, saver)
+    line = claim_agent.work_claim("CLM-1002", new_run(1), model, saver)
     assert line == "CLM-1002: approved $1,250.00, waiting for sign-off"
     held = claim("CLM-1002")
     assert held["status"] == "awaiting_sign_off"
@@ -147,7 +148,7 @@ def test_a_payout_over_the_limit_pauses_for_sign_off():
 def test_a_sign_off_resumes_the_claim_and_pays_it_once():
     saver = InMemorySaver()
     claim_agent.work_claim(
-        new_run(1), "CLM-1002", stub(*approve_and_pay("CLM-1002", 1250.0)), saver
+        "CLM-1002", new_run(1), stub(*approve_and_pay("CLM-1002", 1250.0)), saver
     )
     assert claim_agent.carry_on("CLM-1002", stub(), saver).endswith("sign-off")
     assert claim("CLM-1002")["status"] == "awaiting_sign_off"
@@ -176,8 +177,8 @@ def test_declines_and_referrals_are_reported():
     run_id = new_run(2)
     declined = stub(AIMessage(content="No."), decide("CLM-1001", "decline"))
     referred = stub(AIMessage(content="Hmm."), decide("CLM-1002", "refer"))
-    assert claim_agent.work_claim(run_id, "CLM-1001", declined) == "CLM-1001: declined"
-    assert claim_agent.work_claim(run_id, "CLM-1002", referred) == "CLM-1002: referred"
+    assert claim_agent.work_claim("CLM-1001", run_id, declined) == "CLM-1001: declined"
+    assert claim_agent.work_claim("CLM-1002", run_id, referred) == "CLM-1002: referred"
     assert claim("CLM-1001")["payment"] is None
 
 
@@ -195,7 +196,7 @@ def test_a_refused_decision_goes_back_to_the_model():
         AIMessage(content="Fixing the payout."),
         decide("CLM-1001", "decline"),
     )
-    line = claim_agent.work_claim(new_run(1), "CLM-1001", model)
+    line = claim_agent.work_claim("CLM-1001", new_run(1), model)
     assert line == "CLM-1001: declined"
     texts = [step["text"] for step in recorded_steps("CLM-1001")]
     assert "record_decision: A decline or a refer has a payout of 0." in texts
@@ -219,7 +220,7 @@ def test_a_stopped_claim_carries_on_from_its_last_step():
     run_id = new_run(1)
     first = stub(call_tool("get_claim", claim_id="CLM-1001"), KeyboardInterrupt())
     with pytest.raises(KeyboardInterrupt):
-        claim_agent.work_claim(run_id, "CLM-1001", first, saver)
+        claim_agent.work_claim("CLM-1001", run_id, first, saver)
     stopped = claim("CLM-1001")
     assert stopped["status"] == "in_progress"
     assert stopped["attempts"] == 0
@@ -238,11 +239,11 @@ def test_a_stopped_claim_carries_on_from_its_last_step():
 
 def test_a_model_error_is_retried():
     model = stub(ERROR, *approve_and_pay("CLM-1001"))
-    assert claim_agent.work_claim(new_run(1), "CLM-1001", model).endswith("paid")
+    assert claim_agent.work_claim("CLM-1001", new_run(1), model).endswith("paid")
 
 
 def test_a_failing_model_puts_the_claim_back():
-    line = claim_agent.work_claim(new_run(1), "CLM-1001", stub(ERROR, ERROR, ERROR))
+    line = claim_agent.work_claim("CLM-1001", new_run(1), stub(ERROR, ERROR, ERROR))
     assert line == (
         "CLM-1001: failed, back in the queue (attempt 1 of 2). "
         "The agent stopped with an error: model unavailable."
@@ -257,8 +258,8 @@ def test_a_failing_model_puts_the_claim_back():
 
 def test_a_second_failure_leaves_the_claim_for_a_handler():
     run_id = new_run(1)
-    claim_agent.work_claim(run_id, "CLM-1001", stub(ERROR, ERROR, ERROR))
-    line = claim_agent.work_claim(run_id, "CLM-1001", stub(ERROR, ERROR, ERROR))
+    claim_agent.work_claim("CLM-1001", run_id, stub(ERROR, ERROR, ERROR))
+    line = claim_agent.work_claim("CLM-1001", run_id, stub(ERROR, ERROR, ERROR))
     assert line.startswith("CLM-1001: failed twice, left for a handler.")
     assert claim("CLM-1001")["status"] == "needs_handler"
 
@@ -266,10 +267,10 @@ def test_a_second_failure_leaves_the_claim_for_a_handler():
 def test_each_attempt_gets_a_new_thread_and_a_clean_conversation():
     saver = InMemorySaver()
     run_id = new_run(1)
-    claim_agent.work_claim(run_id, "CLM-1001", stub(ERROR, ERROR, ERROR), saver)
+    claim_agent.work_claim("CLM-1001", run_id, stub(ERROR, ERROR, ERROR), saver)
     first_thread = claim("CLM-1001")["thread_id"]
     model = stub(*approve_and_pay("CLM-1001"))
-    claim_agent.work_claim(run_id, "CLM-1001", model, saver)
+    claim_agent.work_claim("CLM-1001", run_id, model, saver)
     second_thread = claim("CLM-1001")["thread_id"]
     assert first_thread == f"CLM-1001-{run_id}-1"
     assert second_thread == f"CLM-1001-{run_id}-2"
@@ -281,31 +282,45 @@ def test_a_looping_agent_is_stopped(monkeypatch):
     assert claim_agent.MODEL_CALL_LIMIT == 30
     monkeypatch.setattr(claim_agent, "MODEL_CALL_LIMIT", 3)
     loop = [call_tool("get_claim", claim_id="CLM-1001") for _ in range(10)]
-    line = claim_agent.work_claim(new_run(1), "CLM-1001", stub(*loop))
+    line = claim_agent.work_claim("CLM-1001", new_run(1), stub(*loop))
     assert line.startswith("CLM-1001: failed, back in the queue")
     assert "3 model calls" in line
 
 
 def test_a_claim_is_never_decided_or_paid_twice():
     model = stub(*approve_and_pay("CLM-1001"))
-    claim_agent.work_claim(new_run(1), "CLM-1001", model)
-    line = claim_agent.work_claim(new_run(1), "CLM-1001", stub())
-    assert line == "CLM-1001: not started. Claim CLM-1001 is not waiting."
+    claim_agent.work_claim("CLM-1001", new_run(1), model)
+    line = claim_agent.work_claim("CLM-1001", new_run(1), stub())
+    assert line == "CLM-1001: approved, $420.00 paid"
     assert claim("CLM-1001")["payment"]["amount"] == 420.0
 
 
 def test_instructions_come_from_the_backend(tmp_path, monkeypatch):
     (tmp_path / "claim.md").write_text("Decide claims carefully.", encoding="utf-8")
-    (tmp_path / "queue.md").write_text("Run the queue.", encoding="utf-8")
     monkeypatch.setattr(backend, "INSTRUCTIONS", tmp_path)
     model = stub(*approve_and_pay("CLM-1001"))
-    claim_agent.work_claim(new_run(1), "CLM-1001", model)
+    claim_agent.work_claim("CLM-1001", new_run(1), model)
     assert model.seen[0][0].content == "Decide claims carefully."
 
 
-def test_the_checkpointer_is_in_memory_without_a_database_url():
-    checkpoints.checkpointer.cache_clear()
-    assert isinstance(checkpoints.checkpointer(), InMemorySaver)
+def test_the_saver_is_in_memory_without_a_database_url():
+    checkpoints.memory.cache_clear()
+    assert isinstance(checkpoints.saver(), InMemorySaver)
+    assert checkpoints.saver() is checkpoints.saver()
+
+
+def test_each_claim_run_gets_a_saver_of_its_own_on_one_shared_pool(monkeypatch):
+    url = "postgresql://u:p@db.example.com:5432/postgres"
+    pool = checkpoints.make_pool(url)
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setattr(checkpoints, "shared_pool", lambda: pool)
+    first, second = checkpoints.saver(), checkpoints.saver()
+    assert isinstance(first, PostgresSaver)
+    assert isinstance(second, PostgresSaver)
+    assert first is not second
+    assert first.conn is second.conn is pool
+    assert first.lock is not second.lock
+    assert pool.timeout == checkpoints.WAIT_FOR_CONNECTION
 
 
 def test_the_pool_keeps_to_four_connections_with_langgraphs_settings():
@@ -320,7 +335,19 @@ def test_the_pool_keeps_to_four_connections_with_langgraphs_settings():
 
 def test_the_command_line_works_one_claim(monkeypatch):
     monkeypatch.setattr(main, "model", lambda: stub(*approve_and_pay("CLM-1001")))
-    assert cli(["--claim", "CLM-1001"]) == "CLM-1001: approved, $420.00 paid"
+    assert cli(["CLM-1001"]) == "CLM-1001: approved, $420.00 paid"
+    assert main.call("GET", "/api/claims/CLM-1001")["status"] == "decided"
+    assert cli(["CLM-1001"]) == "CLM-1001: approved, $420.00 paid"
+
+
+def test_the_command_line_carries_on_a_claim_in_progress(monkeypatch):
+    saver = InMemorySaver()
+    monkeypatch.setattr(checkpoints, "saver", lambda: saver)
+    stopped = stub(call_tool("get_claim", claim_id="CLM-1001"), KeyboardInterrupt())
+    with pytest.raises(KeyboardInterrupt):
+        claim_agent.work_claim("CLM-1001", new_run(1), stopped, saver)
+    monkeypatch.setattr(main, "model", lambda: stub(*approve_and_pay("CLM-1001")[1:]))
+    assert cli(["CLM-1001"]) == "CLM-1001: approved, $420.00 paid"
 
 
 def test_model_name(monkeypatch):
@@ -350,6 +377,11 @@ def test_tracing_needs_langfuse_keys(monkeypatch):
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
     config = main.tracing("T-1")
     assert config.get("metadata") == {"langfuse_session_id": "T-1"}
+    tagged = main.tracing("T-1", ["RUN-1"])
+    assert tagged.get("metadata") == {
+        "langfuse_session_id": "T-1",
+        "langfuse_tags": ["RUN-1"],
+    }
     callbacks = config.get("callbacks")
     assert isinstance(callbacks, list)
     assert len(callbacks) == 1

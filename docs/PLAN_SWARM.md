@@ -119,24 +119,24 @@ START ─▶ list_claims ─ fan_out: one Send per claim ─▶ work_claim ─�
 - `agent/checkpoints.py`: `saver()` on a shared pool as above, and the longer wait for a connection in the pool and in the backend's engine.
 - `uv run -m agent CLM-1001` works one claim, with no flags.
 - Removed: `agent/queue_agent.py`, `agent/resume.py` (a dispatch finishes what was left), `run_queue` and the queue parts of `agent/service.py` and `agent/tests/test_queue.py`, `uv run -m agent --limit`, the to-do list in the dashboard's run panel and in `e2e/harness.spec.ts`.
-- Spike first: write a test that proves how `add_node(..., error_handler=...)` behaves after the retries run out in LangGraph 1.2.12 (what the handler receives and that the dispatch carries on), before building on it.
+- Spike first: write a test that proves how `add_node(..., error_handler=...)` behaves after the retries run out, before building on it. Result: in LangGraph 1.2.12 the handler ran but the error was still re-raised when more than one claim ran in a step, so the project moved to LangGraph 1.2.24 (`langgraph>=1.2.24` in `pyproject.toml`), where the handler's result stands and the dispatch carries on.
 
 **Why this way:** the claim agent keeps its own thread, so a sign-off, a restart or a retry only ever touches that one claim. Letting only rate limits and timeouts through without releasing is what keeps a retry the same attempt, and it is safe because the backend never decides or pays twice.
 
 **Success criteria** (pytest, stub model, no network)
 
-- [ ] never more than N claims are worked at once: a stand-in for `claim.work_claim` that counts overlaps, with 12 claims, at N=1, 3 and 25
-- [ ] a dispatch works the claims left in progress, then the waiting ones, oldest submitted first, and never a decided, held or `needs_handler` claim
-- [ ] a claim whose model raises a rate limit past the graph's own retries carries on as the same attempt (same thread, `attempts` unchanged), with exactly one decision recorded and one payment
-- [ ] a claim that keeps hitting rate limits or timeouts after the worker's retries stays `in_progress`, the dispatch still finishes, and the other claims are decided
-- [ ] a claim that fails with another error goes back to the queue and is tried once more in the same dispatch; one that fails twice is `needs_handler`; neither stops the other claims
-- [ ] a claim carried on from `in_progress` in a new dispatch keeps its thread, and shows in the new dispatch's claims
-- [ ] a claim the service is already resuming (its lock held) is skipped
-- [ ] each claim's trace carries the run's id in `langfuse_tags` (checked through the config the tracing helper returns)
-- [ ] two savers from `checkpoints.saver()` share one pool and are not the same object
-- [ ] nothing in `agent/` mentions `queue_agent`, `write_todos` or `data/`; the queue tests, the to-do e2e test and the `todos` column are gone
-- [ ] `uv run -m agent CLM-1001` works one claim against a stub (`cli(["CLM-1001"])` in a test)
-- [ ] `npm run check:python` and `npm run check:ts` pass with coverage of 80% or more
+- [x] never more than N claims are worked at once: a stand-in for `claim.work_claim` that counts overlaps, with 12 claims, at N=1, 3 and 25
+- [x] a dispatch works the claims left in progress, then the waiting ones, oldest submitted first, and never a decided, held or `needs_handler` claim
+- [x] a claim whose model raises a rate limit past the graph's own retries carries on as the same attempt (same thread, `attempts` unchanged), with exactly one decision recorded and one payment
+- [x] a claim that keeps hitting rate limits or timeouts after the worker's retries stays `in_progress`, the dispatch still finishes, and the other claims are decided
+- [x] a claim that fails with another error goes back to the queue and is tried once more in the same dispatch; one that fails twice is `needs_handler`; neither stops the other claims
+- [x] a claim carried on from `in_progress` in a new dispatch keeps its thread, and shows in the new dispatch's claims
+- [x] a claim the service is already resuming (its lock held) is skipped
+- [x] each claim's trace carries the run's id in `langfuse_tags` (checked through the config the tracing helper returns)
+- [x] two savers from `checkpoints.saver()` share one pool and are not the same object
+- [x] nothing in `agent/` mentions `queue_agent`, `write_todos` or `data/`; the queue tests, the to-do e2e test and the `todos` column are gone
+- [x] `uv run -m agent CLM-1001` works one claim against a stub (`cli(["CLM-1001"])` in a test)
+- [x] `npm run check:python` and `npm run check:ts` pass with coverage of 80% or more
 
 ## Phase 3: Starting a dispatch from the dashboard
 
