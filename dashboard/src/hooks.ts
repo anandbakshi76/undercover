@@ -23,12 +23,17 @@ export function useTheme() {
 export type Route =
   | { page: "queue" }
   | { page: "claim"; claimId: string }
-  | { page: "instructions" };
+  | { page: "instructions" }
+  | { page: "scoreboard" }
+  | { page: "evaluation"; runId: string };
 
 export function parseRoute(hash: string): Route {
   const claim = /^#\/claims\/([\w-]+)$/.exec(hash);
   if (claim?.[1]) return { page: "claim", claimId: claim[1] };
+  const evaluation = /^#\/evaluations\/([\w-]+)$/.exec(hash);
+  if (evaluation?.[1]) return { page: "evaluation", runId: evaluation[1] };
   if (hash === "#/instructions") return { page: "instructions" };
+  if (hash === "#/scoreboard") return { page: "scoreboard" };
   return { page: "queue" };
 }
 

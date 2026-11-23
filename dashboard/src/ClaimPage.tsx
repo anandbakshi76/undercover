@@ -255,7 +255,7 @@ function DecisionPanel({
       <p>{decision.reason}</p>
       <p className="note">Based on: {decision.policy_section}</p>
       <Payment claim={claim} handlers={handlers} />
-      {claim.status === "awaiting_sign_off" && (
+      {claim.status === "awaiting_sign_off" && !claim.evaluation_id && (
         <SignOffForm
           claimId={claim.claim_id}
           handlers={handlers}
@@ -328,7 +328,13 @@ export function ClaimPage({ claimId }: Readonly<{ claimId: string }>) {
   return (
     <>
       <p>
-        <a href="#/">Back to the queue</a>
+        {claim.evaluation_id ? (
+          <a href={`#/evaluations/${claim.evaluation_id}`}>
+            Back to the evaluation
+          </a>
+        ) : (
+          <a href="#/">Back to the queue</a>
+        )}
       </p>
       <div className="page-head">
         <h1>
@@ -336,7 +342,7 @@ export function ClaimPage({ claimId }: Readonly<{ claimId: string }>) {
         </h1>
         <div className="actions">
           <Badge status={claim.status} />
-          {claim.status === "waiting" && (
+          {claim.status === "waiting" && !claim.evaluation_id && (
             <button
               type="button"
               onClick={() => void runAgent()}
@@ -348,6 +354,13 @@ export function ClaimPage({ claimId }: Readonly<{ claimId: string }>) {
         </div>
       </div>
       {run.error && <p role="alert">{run.error}</p>}
+      {claim.evaluation_id && (
+        <p className="note">
+          This is a copy of <span className="mono">{claim.source_id}</span>{" "}
+          worked for an evaluation. It is not in the queue and cannot be signed
+          off.
+        </p>
+      )}
       <div className="claim-grid">
         <div className="column">
           <ClaimFacts claim={claim} />

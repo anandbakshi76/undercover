@@ -111,3 +111,114 @@ test("the queue shows a dispatch played out through the API", async ({
     page.getByRole("button", { name: "Start a dispatch" }),
   ).toBeEnabled();
 });
+
+test("starting an evaluation on the scoreboard reaches the service with the set, tiny and N", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/#/scoreboard");
+  await page.getByLabel("Set").selectOption("held_out");
+  await page.getByLabel("Claims", { exact: true }).selectOption("tiny");
+  await page.getByLabel("Claim agents at once").fill("5");
+  await page.getByRole("button", { name: "Start an evaluation" }).click();
+  await expect
+    .poll(async () =>
+      (await sentToAgent(request)).filter((r) => r.path === "/api/evaluations"),
+    )
+    .toEqual([
+      {
+        method: "POST",
+        path: "/api/evaluations",
+        body: { concurrency: 5, evaluation_set: "held_out", tiny: true },
+      },
+    ]);
+});
+
+test("the scoreboard shows an evaluation played out through the API", async ({
+  page,
+  request,
+}) => {
+  const queueBefore = (await (await request.get("/api/claims")).json()) as {
+    claim_id: string;
+  }[];
+  const created = await request.post("/api/runs/evaluation", {
+    data: {
+      concurrency: 5,
+      evaluation_set: "held_out",
+      tiny: true,
+      model: "openai/gpt-6-luna",
+      reasoning_effort: "low",
+    },
+  });
+  const run = (await created.json()) as {
+    run_id: string;
+    claims_worked: string[];
+  };
+  expect(run.claims_worked).toHaveLength(5);
+
+  const [first, second, third, fourth] = run.claims_worked;
+  for (const copy of run.claims_worked) {
+    await request.post(`/api/claims/${copy}/start`, {
+      data: { run_id: run.run_id },
+    });
+    await request.post(`/api/claims/${copy}/model-calls`, {
+      data: {
+        run_id: run.run_id,
+        prompt_tokens: 1000,
+        completion_tokens: 200,
+        cost: 0.02,
+      },
+    });
+    await request.post(`/api/claims/${copy}/work-time`, {
+      data: {
+        run_id: run.run_id,
+        started_at: "2026-11-08T10:00:00.000+00:00",
+        seconds: 6,
+      },
+    });
+  }
+  await approve(request, first, "decline", 0);
+  await approve(request, second, "refer", 0);
+  await approve(request, third, "approve", 1250);
+  await approve(request, fourth, "approve", 100);
+  await request.post(`/api/runs/${run.run_id}/finish`, {
+    data: { status: "finished" },
+  });
+
+  await page.goto("/#/scoreboard");
+  const table = page.getByRole("table", { name: "Evaluations" });
+  const row = table.getByRole("row", { name: /Held-out set/ }).first();
+  await expect(row).toContainText("Finished");
+  await expect(row).toContainText("$0.0200");
+  await expect(row).toContainText("6.0 s");
+  await expect(row).toContainText("%");
+  await row.getByRole("link").click();
+
+  const measures = page.getByLabel("Measures");
+  await expect(measures).toContainText("Decision accuracy");
+  await expect(measures).toContainText("Cost of mistakes");
+  await expect(measures).toContainText("Straight through");
+  const claimsTable = page.getByRole("table", { name: "Evaluation claims" });
+  await expect(claimsTable.getByRole("row")).toHaveCount(6);
+  await expect(
+    claimsTable.getByText("Match").or(claimsTable.getByText("Miss")).first(),
+  ).toBeVisible();
+
+  await claimsTable.getByRole("row").nth(3).getByRole("link").click();
+  await expect(page.getByText(/worked for an evaluation/)).toBeVisible();
+  await expect(page.locator(".actions .badge")).toHaveText(
+    "Waiting for sign-off",
+  );
+  await expect(page.getByLabel("Handler")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Sign off/ })).toHaveCount(0);
+
+  const queueAfter = (await (await request.get("/api/claims")).json()) as {
+    claim_id: string;
+  }[];
+  expect(queueAfter).toHaveLength(queueBefore.length);
+  expect(queueAfter.every((c) => /^CLM-\d+$/.test(c.claim_id))).toBe(true);
+  await page.goto("/");
+  await expect(
+    page.getByRole("list", { name: "Claims by state" }),
+  ).toBeVisible();
+});

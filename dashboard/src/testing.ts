@@ -3,6 +3,9 @@ import type {
   ClaimDetail,
   ClaimSummary,
   Handler,
+  Evaluation,
+  EvaluationClaim,
+  EvaluationDetail,
   Policy,
   Run,
   RunClaim,
@@ -106,6 +109,8 @@ export function claim(overrides: Partial<ClaimDetail> = {}): ClaimDetail {
     attempts: 0,
     thread_id: null,
     run_id: null,
+    evaluation_id: null,
+    source_id: null,
     ...overrides,
   };
 }
@@ -174,4 +179,52 @@ export function run(overrides: Partial<Run> = {}): Run {
     elapsed_seconds: 3,
     ...overrides,
   };
+}
+
+export function evaluation(overrides: Partial<Evaluation> = {}): Evaluation {
+  return {
+    run_id: "EVAL-0001",
+    evaluation_set: "evaluation",
+    tiny: false,
+    concurrency: 25,
+    model: "openai/gpt-6-luna",
+    reasoning_effort: "low",
+    status: "finished",
+    started_at: "2026-11-08T10:00:00.000+00:00",
+    finished_at: "2026-11-08T10:01:00.000+00:00",
+    claim_count: 25,
+    decision_accuracy: 0.84,
+    accuracy: 0.76,
+    cost_of_mistakes: 3250,
+    straight_through: 0.8,
+    cost_per_claim: 0.0123,
+    seconds_per_claim: 31.4,
+    run_seconds: 83,
+    ...overrides,
+  };
+}
+
+export function evaluationClaim(
+  overrides: Partial<EvaluationClaim> = {},
+): EvaluationClaim {
+  return {
+    claim_id: "EVAL-0001-CLM-1001",
+    source_id: "CLM-1001",
+    status: "decided",
+    handler: { decision: "approve", payout: 420 },
+    agent: { decision: "approve", payout: 420 },
+    reason: "Covered.",
+    right: true,
+    mistake_cost: 0,
+    cost: 0.0123,
+    seconds: 12.5,
+    started_at: "2026-11-08T10:00:01.000+00:00",
+    ...overrides,
+  };
+}
+
+export function evaluationDetail(
+  overrides: Partial<EvaluationDetail> = {},
+): EvaluationDetail {
+  return { ...evaluation(), claims: [evaluationClaim()], ...overrides };
 }

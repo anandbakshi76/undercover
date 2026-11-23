@@ -56,6 +56,8 @@ export interface ClaimDetail extends ClaimBase {
   attempts: number;
   thread_id: string | null;
   run_id: string | null;
+  evaluation_id: string | null;
+  source_id: string | null;
 }
 
 export interface Policy {
@@ -117,6 +119,54 @@ export interface Run {
   elapsed_seconds: number;
 }
 
+export type EvaluationSet = "evaluation" | "held_out";
+
+export interface Measures {
+  claim_count: number;
+  decision_accuracy: number;
+  accuracy: number;
+  cost_of_mistakes: number;
+  straight_through: number;
+  cost_per_claim: number;
+  seconds_per_claim: number;
+  run_seconds: number;
+}
+
+export interface Evaluation extends Measures {
+  run_id: string;
+  evaluation_set: EvaluationSet;
+  tiny: boolean;
+  concurrency: number;
+  model: string;
+  reasoning_effort: string;
+  status: RunStatus;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface Answer {
+  decision: DecisionKind;
+  payout: number;
+}
+
+export interface EvaluationClaim {
+  claim_id: string;
+  source_id: string;
+  status: ClaimStatus;
+  handler: Answer;
+  agent: Answer;
+  reason: string | null;
+  right: boolean;
+  mistake_cost: number;
+  cost: number;
+  seconds: number;
+  started_at: string | null;
+}
+
+export interface EvaluationDetail extends Evaluation {
+  claims: EvaluationClaim[];
+}
+
 export interface Instructions {
   claim: string;
 }
@@ -163,6 +213,19 @@ export const api = {
   instructions: () => request<Instructions>("/api/instructions"),
   latestDispatch: () => request<Run | null>("/api/dispatches/latest"),
   handlers: () => request<Handler[]>("/api/handlers"),
+  evaluations: () => request<Evaluation[]>("/api/evaluations"),
+  evaluation: (runId: string) =>
+    request<EvaluationDetail>(`/api/evaluations/${runId}`),
+  startEvaluation: (
+    concurrency: number,
+    evaluationSet: EvaluationSet,
+    tiny: boolean,
+  ) =>
+    post<Evaluation>("/api/evaluations", {
+      concurrency,
+      evaluation_set: evaluationSet,
+      tiny,
+    }),
   startDispatch: (concurrency: number) =>
     post<Run>("/api/dispatches", { concurrency }),
   runAgent: (claimId: string) =>

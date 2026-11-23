@@ -1,4 +1,9 @@
-import type { ClaimStatus, DecisionKind, RunStatus } from "./api";
+import type {
+  ClaimStatus,
+  DecisionKind,
+  EvaluationSet,
+  RunStatus,
+} from "./api";
 
 const dollars = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -63,4 +68,13 @@ export function clock(iso: string): string {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+export const SET_LABELS: Record<EvaluationSet, string> = {
+  evaluation: "Evaluation set",
+  held_out: "Held-out set",
+};
+
+export function percent(share: number): string {
+  return `${(share * 100).toFixed(0)}%`;
 }

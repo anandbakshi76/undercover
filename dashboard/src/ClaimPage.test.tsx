@@ -330,3 +330,40 @@ it("shows a claim left for a handler, with no Run agent button", async () => {
   expect(screen.getAllByText("Needs a handler").length).toBeGreaterThan(0);
   expect(screen.queryByRole("button", { name: "Run agent" })).toBeNull();
 });
+
+it("shows an evaluation copy with a note, a way back, and no sign-off form or Run agent button", async () => {
+  mockApi(
+    routes({
+      "GET /api/claims/CLM-1001": claim({
+        claim_id: "CLM-1001",
+        status: "awaiting_sign_off",
+        decision: approval,
+        evaluation_id: "EVAL-0001",
+        source_id: "CLM-1001",
+      }),
+    }),
+  );
+  render(<ClaimPage claimId="CLM-1001" />);
+  expect(await screen.findByText(/worked for an evaluation/)).toBeDefined();
+  expect(
+    screen
+      .getByRole("link", { name: "Back to the evaluation" })
+      .getAttribute("href"),
+  ).toBe("#/evaluations/EVAL-0001");
+  expect(screen.queryByRole("button", { name: /Sign off/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Run agent" })).toBeNull();
+});
+
+it("shows no Run agent button on a waiting evaluation copy", async () => {
+  mockApi(
+    routes({
+      "GET /api/claims/CLM-1001": claim({
+        evaluation_id: "EVAL-0001",
+        source_id: "CLM-1001",
+      }),
+    }),
+  );
+  render(<ClaimPage claimId="CLM-1001" />);
+  await screen.findByText(/worked for an evaluation/);
+  expect(screen.queryByRole("button", { name: "Run agent" })).toBeNull();
+});

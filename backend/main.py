@@ -93,6 +93,7 @@ def claim_view(row: Row) -> dict[str, Any]:
         "thread_id": row["thread_id"],
         "run_id": row["run_id"],
         "evaluation_id": row["evaluation_id"],
+        "source_id": row["source_id"],
     }
 
 

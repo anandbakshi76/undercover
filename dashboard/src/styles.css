@@ -564,3 +564,52 @@ td .mono,
 .instructions-part + .instructions-part {
   margin-top: 16px;
 }
+
+.eval-form {
+  margin-bottom: 16px;
+}
+
+.eval-form h2 {
+  margin-top: 0;
+}
+
+.run-form select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--subtle);
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.measures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  margin: 0 0 16px;
+}
+
+.measures dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.measures dd {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+tr.miss td {
+  background: var(--subtle);
+}
+
+.badge.hit {
+  background: var(--sea-green);
+  color: var(--midnight);
+}
+
+.badge.missed {
+  background: var(--raspberry);
+  color: #ffffff;
+}

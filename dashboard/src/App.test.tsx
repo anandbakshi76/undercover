@@ -8,7 +8,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { parseRoute, THEME_KEY } from "./hooks";
-import { claim, mockApi, policy, summary } from "./testing";
+import { claim, evaluationDetail, mockApi, policy, summary } from "./testing";
 
 afterEach(() => {
   cleanup();
@@ -27,6 +27,11 @@ describe("parseRoute", () => {
       page: "claim",
       claimId: "CLM-1001",
     });
+    expect(parseRoute("#/scoreboard")).toEqual({ page: "scoreboard" });
+    expect(parseRoute("#/evaluations/EVAL-0001")).toEqual({
+      page: "evaluation",
+      runId: "EVAL-0001",
+    });
     expect(parseRoute("#/elsewhere")).toEqual({ page: "queue" });
   });
 });
@@ -41,6 +46,28 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Claims queue" }),
     ).toBeDefined();
+  });
+
+  it("shows the scoreboard and an evaluation from the hash", async () => {
+    mockApi({
+      "GET /api/evaluations": [],
+      "GET /api/evaluations/EVAL-0001": evaluationDetail(),
+    });
+    window.location.hash = "#/scoreboard";
+    render(<App />);
+    expect(
+      await screen.findByRole("heading", { name: "Scoreboard" }),
+    ).toBeDefined();
+    expect(
+      screen
+        .getByRole("link", { name: "Scoreboard" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    act(() => {
+      window.location.hash = "#/evaluations/EVAL-0001";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    expect(await screen.findByLabelText("Measures")).toBeDefined();
   });
 
   it("shows the instructions page", async () => {

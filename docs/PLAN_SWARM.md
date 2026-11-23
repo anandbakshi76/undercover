@@ -202,12 +202,12 @@ START ─▶ list_claims ─ fan_out: one Send per claim ─▶ work_claim ─�
 
 **Success criteria**
 
-- [ ] vitest: the list shows each evaluation's measures formatted and newest first; a stopped one shows Stopped; the detail marks the misses and links each claim
-- [ ] vitest: the form sends the set, tiny and N; a refusal shows its message
-- [ ] vitest: a copy's claim page shows the note and no sign-off form or Run agent button
-- [ ] e2e: the evaluation test above, and the start test, pass
-- [ ] Playwright MCP: the Scoreboard and an evaluation's page in light and dark mode, and at phone width with no horizontal scroll
-- [ ] `npm run check:ts` passes with coverage of 80% or more, and `npm run e2e` passes
+- [x] vitest: the list shows each evaluation's measures formatted and newest first; a stopped one shows Stopped; the detail marks the misses and links each claim
+- [x] vitest: the form sends the set, tiny and N; a refusal shows its message
+- [x] vitest: a copy's claim page shows the note and no sign-off form or Run agent button
+- [x] e2e: the evaluation test above, and the start test, pass
+- [ ] (deferred to the live app in Phase 6) Playwright MCP: the Scoreboard and an evaluation's page in light and dark mode, and at phone width with no horizontal scroll
+- [x] `npm run check:ts` passes with coverage of 80% or more, and `npm run e2e` passes
 
 ## Phase 6: Live runs and the handover
 
