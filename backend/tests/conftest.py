@@ -4,7 +4,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from backend import main
+from backend import agent_service
 from backend.main import app
 
 
@@ -38,7 +38,7 @@ def fresh_db(tmp_path, monkeypatch):
 @pytest.fixture(autouse=True)
 def agent(monkeypatch):
     stand_in = StandIn()
-    monkeypatch.setattr(main, "agent_client", stand_in.client)
+    monkeypatch.setattr(agent_service, "client", stand_in.client)
     return stand_in
 
 

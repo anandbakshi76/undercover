@@ -22,7 +22,7 @@ def cli(argv: list[str] | None = None) -> str:
     main.call(
         "POST",
         f"/api/runs/{run['run_id']}/finish",
-        {"status": "finished", "summary": line},
+        {"status": "finished"},
     )
     return line
 

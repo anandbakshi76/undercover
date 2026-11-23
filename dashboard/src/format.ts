@@ -1,4 +1,4 @@
-import type { ClaimStatus, DecisionKind } from "./api";
+import type { ClaimStatus, DecisionKind, RunStatus } from "./api";
 
 const dollars = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -38,3 +38,29 @@ export const DECISION_LABELS: Record<DecisionKind, string> = {
   decline: "Declined",
   refer: "Referred",
 };
+
+export const RUN_LABELS: Record<RunStatus, string> = {
+  running: "Running",
+  finished: "Finished",
+  failed: "Failed",
+  stopped: "Stopped",
+};
+
+export function cost(amount: number): string {
+  return `$${amount.toFixed(4)}`;
+}
+
+export function duration(seconds: number): string {
+  if (seconds < 60) return `${seconds.toFixed(1)} s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes)} min ${String(Math.round(seconds - minutes * 60))} s`;
+}
+
+export function clock(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}

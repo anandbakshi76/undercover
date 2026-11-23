@@ -5,8 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent import checkpoints, main
-from backend import db
-from backend import main as backend
+from backend import agent_service, db
 from backend.main import app
 
 
@@ -22,7 +21,7 @@ def fresh_backend(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "backend", lambda: nullcontext(client))
     monkeypatch.setattr(main, "RETRY_DELAY", 0)
     down = httpx.Client(base_url="http://agent", transport=httpx.MockTransport(refuse))
-    monkeypatch.setattr(backend, "agent_client", lambda: down)
+    monkeypatch.setattr(agent_service, "client", lambda: down)
     checkpoints.memory.cache_clear()
 
 

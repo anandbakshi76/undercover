@@ -152,16 +152,16 @@ START ─▶ list_claims ─ fan_out: one Send per claim ─▶ work_claim ─�
 
 **Success criteria**
 
-- [ ] pytest: `start_dispatch` sends N to the stand-in service and returns its answer; with the service down it returns 503 "The agent isn't running." and no run is created
-- [ ] pytest: a second `create_dispatch` while one is running returns 409, and works again after `finish_run`; N outside 1 to 25 returns 422
-- [ ] pytest: on startup the service marks a running dispatch `stopped` and its claims in progress stay in progress
-- [ ] pytest: the summary of a finished dispatch matches its records: counts of approved, declined and referred, a payout waiting for sign-off, a claim left for a handler and one still in progress
-- [ ] pytest: a run's cost and time are its own, failed attempts included, a second run's totals don't change the first's, and a sign-off wait is not in the time
-- [ ] pytest: a service test: `run_dispatch` creates the run, works it with a stub model in the background, and finishes it
-- [ ] vitest: the form starts at 3, limits 1 to 25, and calls `startDispatch` with N; a refusal shows its message; the run panel shows each claim, the cost and the time, the summary when finished and Stopped for a stopped run
-- [ ] e2e: starting a dispatch on the dashboard with N=7 reaches the stand-in service with `{"concurrency": 7}`
-- [ ] Playwright MCP: the queue page against a stub dispatch played out through the API (claims in different states, a summary) in light and dark mode, with no horizontal scroll at phone width
-- [ ] `npm run check` runs the unit checks and e2e green
+- [x] pytest: `start_dispatch` sends N to the stand-in service and returns its answer; with the service down it returns 503 "The agent isn't running." and no run is created
+- [x] pytest: a second `create_dispatch` while one is running returns 409, and works again after `finish_run`; N outside 1 to 25 returns 422
+- [x] pytest: on startup the service marks a running dispatch `stopped` and its claims in progress stay in progress
+- [x] pytest: the summary of a finished dispatch matches its records: counts of approved, declined and referred, a payout waiting for sign-off, a claim left for a handler and one still in progress
+- [x] pytest: a run's cost and time are its own, failed attempts included, a second run's totals don't change the first's, and a sign-off wait is not in the time
+- [x] pytest: a service test: `run_dispatch` creates the run, works it with a stub model in the background, and finishes it
+- [x] vitest: the form starts at 3, limits 1 to 25, and calls `startDispatch` with N; a refusal shows its message; the run panel shows each claim, the cost and the time, the summary when finished and Stopped for a stopped run
+- [x] e2e: starting a dispatch on the dashboard with N=7 reaches the stand-in service with `{"concurrency": 7}`
+- [ ] (deferred to the live app in Phase 6) Playwright MCP: the queue page against a stub dispatch played out through the API (claims in different states, a summary) in light and dark mode, with no horizontal scroll at phone width
+- [x] `npm run check` runs the unit checks and e2e green
 
 ## Phase 4: Evaluations
 

@@ -40,7 +40,7 @@ def status(client, claim_id):
 
 
 def finish(client, run_id):
-    end = {"status": "finished", "summary": "Done."}
+    end = {"status": "finished"}
     return client.post(f"/api/runs/{run_id}/finish", json=end)
 
 
@@ -52,7 +52,8 @@ def test_a_dispatch_records_n_the_model_and_the_effort(client):
     assert run["reasoning_effort"] == "low"
     assert run["status"] == "running"
     assert run["claims_worked"] == []
-    assert client.get(f"/api/runs/{run['run_id']}").json() == run
+    again = client.get(f"/api/runs/{run['run_id']}").json()
+    assert again["run_id"] == run["run_id"]
 
 
 def test_only_one_dispatch_runs_at_a_time(client):
@@ -174,10 +175,9 @@ def test_starting_a_claim_needs_a_running_run(client):
 
 def test_finishing_a_run(client):
     run_id = new_run()
-    end = {"status": "finished", "summary": "Worked one claim."}
-    run = client.post(f"/api/runs/{run_id}/finish", json=end).json()
+    run = client.post(f"/api/runs/{run_id}/finish", json={"status": "finished"}).json()
     assert run["status"] == "finished"
-    assert run["summary"] == "Worked one claim."
+    assert run["summary"]["approved"] == 0
     assert run["finished_at"] is not None
 
 

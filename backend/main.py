@@ -1,8 +1,6 @@
 """The UnderCover backend."""
 
 import json
-import logging
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -10,12 +8,11 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-import httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import Connection, RowMapping, func, insert, select, update
 
-from backend import db, documents, payout
+from backend import agent_service, db, documents, payout
 from backend.db import (
     claims,
     model_calls,
@@ -29,7 +26,6 @@ from backend.db import (
 Row = RowMapping
 
 INSTRUCTIONS = Path(__file__).resolve().parent / "instructions"
-LOG = logging.getLogger("uvicorn.error")
 
 
 @asynccontextmanager
@@ -423,35 +419,6 @@ def pay_claim(claim_id: str, payment: Payment) -> dict[str, Any]:
         return claim_view(claim_row(connection, claim_id))
 
 
-def agent_client() -> httpx.Client:
-    """Return a client for the agent's service."""
-    url = os.getenv("UNDERCOVER_AGENT") or "http://127.0.0.1:8002"
-    return httpx.Client(base_url=url, timeout=30)
-
-
-def forward(path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Pass a request on to the agent's service, or say that it isn't running."""
-    try:
-        with agent_client() as client:
-            response = client.post(path, json=body)
-    except httpx.TransportError:
-        raise HTTPException(503, "The agent isn't running.") from None
-    if response.is_error:
-        raise HTTPException(response.status_code, response.json()["detail"])
-    return response.json()
-
-
-def tell_agent(claim_id: str) -> None:
-    """Tell the agent's service that a claim is signed off, if it can be reached."""
-    try:
-        with agent_client() as client:
-            client.post(f"/api/claims/{claim_id}/resume")
-    except httpx.HTTPError as error:
-        LOG.warning(
-            "The agent was not told about the sign-off on %s: %s", claim_id, error
-        )
-
-
 @app.post("/api/claims/{claim_id}/sign-off", operation_id="sign_off")
 def sign_off(
     claim_id: str, sign_off: SignOff, background: BackgroundTasks
@@ -474,7 +441,7 @@ def sign_off(
             )
         )
         view = claim_view(claim_row(connection, claim_id))
-    background.add_task(tell_agent, claim_id)
+    background.add_task(agent_service.tell, claim_id)
     return view
 
 
@@ -490,7 +457,10 @@ class NewDispatch(BaseModel):
 
 class RunEnd(BaseModel):
     status: Literal["finished", "failed"]
-    summary: str
+
+
+class DispatchStart(BaseModel):
+    concurrency: int = Field(ge=1, le=25)
 
 
 class ClaimStart(BaseModel):
@@ -522,21 +492,84 @@ def worked_ids(connection: Connection, run_id: str) -> list[str]:
     )
 
 
+def run_claims_view(connection: Connection, run_id: str) -> list[dict[str, Any]]:
+    ids = worked_ids(connection, run_id)
+    rows = {
+        row["claim_id"]: row
+        for row in connection.execute(
+            select(
+                claims.c.claim_id, claims.c.status, claims.c.decision, claims.c.payout
+            ).where(claims.c.claim_id.in_(ids))
+        ).mappings()
+    }
+    costs = {
+        claim_id: cost
+        for claim_id, cost in connection.execute(
+            select(model_calls.c.claim_id, func.sum(model_calls.c.cost))
+            .where(model_calls.c.run_id == run_id)
+            .group_by(model_calls.c.claim_id)
+        ).all()
+    }
+    times = {
+        claim_id: (started, seconds)
+        for claim_id, started, seconds in connection.execute(
+            select(
+                work_time.c.claim_id,
+                func.min(work_time.c.started_at),
+                func.sum(work_time.c.seconds),
+            )
+            .where(work_time.c.run_id == run_id)
+            .group_by(work_time.c.claim_id)
+        ).all()
+    }
+    return [
+        {
+            "claim_id": claim_id,
+            "status": rows[claim_id]["status"],
+            "decision": rows[claim_id]["decision"],
+            "payout": rows[claim_id]["payout"],
+            "started_at": times.get(claim_id, (None, 0.0))[0],
+            "seconds": float(times.get(claim_id, (None, 0.0))[1] or 0),
+            "cost": float(costs.get(claim_id) or 0),
+        }
+        for claim_id in ids
+    ]
+
+
+def elapsed_seconds(row: Row) -> float:
+    started = datetime.fromisoformat(row["started_at"])
+    ended = datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None
+    return ((ended or datetime.now(UTC)) - started).total_seconds()
+
+
 def run_view(connection: Connection, run_id: str) -> dict[str, Any]:
     row = run_row(connection, run_id)
+    worked = run_claims_view(connection, run_id)
+    tokens = connection.execute(
+        select(
+            func.coalesce(func.sum(model_calls.c.prompt_tokens), 0),
+            func.coalesce(func.sum(model_calls.c.completion_tokens), 0),
+        ).where(model_calls.c.run_id == run_id)
+    ).one()
     return {
         "run_id": row["run_id"],
         "kind": row["kind"],
         "concurrency": row["concurrency"],
         "status": row["status"],
-        "summary": row["summary"],
+        "summary": json.loads(row["summary"]) if row["summary"] else None,
         "started_at": row["started_at"],
         "finished_at": row["finished_at"],
         "model": row["model"],
         "reasoning_effort": row["reasoning_effort"],
         "evaluation_set": row["evaluation_set"],
         "tiny": None if row["tiny"] is None else bool(row["tiny"]),
-        "claims_worked": worked_ids(connection, run_id),
+        "claims_worked": [item["claim_id"] for item in worked],
+        "claims": worked,
+        "prompt_tokens": int(tokens[0]),
+        "completion_tokens": int(tokens[1]),
+        "cost": sum(item["cost"] for item in worked),
+        "work_seconds": sum(item["seconds"] for item in worked),
+        "elapsed_seconds": elapsed_seconds(row),
     }
 
 
@@ -628,11 +661,37 @@ def release(connection: Connection, claim_id: str, problem: str) -> None:
     add_step_row(connection, claim_id, Step(kind="error", text=f"{problem} {outcome}"))
 
 
-def end_run(connection: Connection, run_id: str, end: RunEnd) -> None:
+def build_summary(connection: Connection, run_id: str) -> dict[str, Any]:
+    """Count a run's decisions and list what still needs people, from the records."""
+    worked = run_claims_view(connection, run_id)
+    decisions = [item["decision"] for item in worked]
+    return {
+        "approved": decisions.count("approve"),
+        "declined": decisions.count("decline"),
+        "referred": decisions.count("refer"),
+        "awaiting_sign_off": [
+            {"claim_id": item["claim_id"], "payout": item["payout"]}
+            for item in worked
+            if item["status"] == "awaiting_sign_off"
+        ],
+        "needs_handler": [
+            item["claim_id"] for item in worked if item["status"] == "needs_handler"
+        ],
+        "in_progress": [
+            item["claim_id"] for item in worked if item["status"] == "in_progress"
+        ],
+    }
+
+
+def end_run(connection: Connection, run_id: str, status: str) -> None:
     connection.execute(
         update(runs)
         .where(runs.c.run_id == run_id)
-        .values(status=end.status, summary=end.summary, finished_at=now_ms())
+        .values(
+            status=status,
+            summary=json.dumps(build_summary(connection, run_id)),
+            finished_at=now_ms(),
+        )
     )
 
 
@@ -648,6 +707,43 @@ def create_dispatch(new: NewDispatch) -> dict[str, Any]:
             new.reasoning_effort,
         )
         return run_view(connection, run_id)
+
+
+@app.post("/api/runs/stop-running", operation_id="stop_running_runs")
+def stop_running_runs() -> list[str]:
+    """Mark every dispatch or evaluation still running as stopped."""
+    with db.connect() as connection:
+        ids = list(
+            connection.execute(
+                select(runs.c.run_id).where(
+                    runs.c.kind.in_(RUN_KINDS), runs.c.status == "running"
+                )
+            ).scalars()
+        )
+        for run_id in ids:
+            end_run(connection, run_id, "stopped")
+    return ids
+
+
+@app.get("/api/dispatches/latest", operation_id="get_latest_dispatch")
+def get_latest_dispatch() -> dict[str, Any] | None:
+    """Get the latest dispatch, or null if there has been none."""
+    with db.connect() as connection:
+        run_id = connection.execute(
+            select(runs.c.run_id)
+            .where(runs.c.kind == "dispatch")
+            .order_by(runs.c.id.desc())
+            .limit(1)
+        ).scalar()
+        return run_view(connection, run_id) if run_id else None
+
+
+@app.post("/api/dispatches", operation_id="start_dispatch")
+def start_dispatch(dispatch: DispatchStart) -> dict[str, Any]:
+    """Ask the agent's service to start a dispatch with N claim agents at once."""
+    return agent_service.forward(
+        "/api/dispatches", {"concurrency": dispatch.concurrency}
+    )
 
 
 @app.get("/api/runs/{run_id}", operation_id="get_run")
@@ -684,10 +780,10 @@ def list_claims_to_work(run_id: str) -> list[str]:
 
 @app.post("/api/runs/{run_id}/finish", operation_id="finish_run")
 def finish_run(run_id: str, end: RunEnd) -> dict[str, Any]:
-    """Record that a run has finished or failed, with its summary."""
+    """Record that a run has finished or failed, with a summary from the records."""
     with db.connect() as connection:
         run_row(connection, run_id)
-        end_run(connection, run_id, end)
+        end_run(connection, run_id, end.status)
         return run_view(connection, run_id)
 
 
@@ -722,4 +818,4 @@ def start_claim_run(claim_id: str) -> dict[str, str]:
 @app.post("/api/claims/{claim_id}/run", operation_id="run_agent")
 def run_agent(claim_id: str) -> dict[str, Any]:
     """Start the UnderCover Agent on one waiting claim."""
-    return forward(f"/api/claims/{claim_id}/run")
+    return agent_service.forward(f"/api/claims/{claim_id}/run")

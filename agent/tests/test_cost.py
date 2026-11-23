@@ -70,13 +70,15 @@ def test_a_failed_attempt_keeps_its_cost_and_its_time():
 def test_the_wait_for_a_sign_off_is_not_counted():
     saver = InMemorySaver()
     model = stub(*approve_and_pay("CLM-1002", payout=1250.0))
+    begun = time.monotonic()
     claim_agent.work_claim("CLM-1002", new_run(1), model, saver)
     time.sleep(0.5)
     main.call("POST", "/api/claims/CLM-1002/sign-off", {"handler_id": "HND-01"})
     claim_agent.carry_on("CLM-1002", stub(), saver)
+    elapsed = time.monotonic() - begun
     first, second = stretches("CLM-1002")
     assert first["started_at"] < second["started_at"]
-    assert first["seconds"] + second["seconds"] < 0.4
+    assert first["seconds"] + second["seconds"] <= elapsed - 0.5
 
 
 def test_costs_add_up_under_their_own_run_or_under_none():

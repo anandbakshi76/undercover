@@ -1,5 +1,13 @@
 import { vi } from "vitest";
-import type { ClaimDetail, ClaimSummary, Handler, Policy, Step } from "./api";
+import type {
+  ClaimDetail,
+  ClaimSummary,
+  Handler,
+  Policy,
+  Run,
+  RunClaim,
+  Step,
+} from "./api";
 
 export class Failure {
   constructor(
@@ -132,6 +140,38 @@ export function step(id: number, overrides: Partial<Step> = {}): Step {
     kind: "tool_call",
     text: `get_claim({"claim_id": "CLM-1001"}) ${String(id)}`,
     created_at: "2026-10-28T10:00:00+00:00",
+    ...overrides,
+  };
+}
+
+export function runClaim(overrides: Partial<RunClaim> = {}): RunClaim {
+  return {
+    claim_id: "CLM-1001",
+    status: "decided",
+    decision: "approve",
+    payout: 420,
+    started_at: "2026-11-08T10:00:01.000+00:00",
+    seconds: 12.5,
+    cost: 0.0123,
+    ...overrides,
+  };
+}
+
+export function run(overrides: Partial<Run> = {}): Run {
+  return {
+    run_id: "RUN-0001",
+    kind: "dispatch",
+    concurrency: 3,
+    status: "running",
+    summary: null,
+    started_at: "2026-11-08T10:00:00.000+00:00",
+    finished_at: null,
+    model: "openai/gpt-6-luna",
+    reasoning_effort: "low",
+    claims: [],
+    cost: 0,
+    work_seconds: 0,
+    elapsed_seconds: 3,
     ...overrides,
   };
 }

@@ -80,6 +80,43 @@ export interface Step {
   created_at: string;
 }
 
+export type RunStatus = "running" | "finished" | "failed" | "stopped";
+
+export interface RunClaim {
+  claim_id: string;
+  status: ClaimStatus;
+  decision: DecisionKind | null;
+  payout: number | null;
+  started_at: string | null;
+  seconds: number;
+  cost: number;
+}
+
+export interface RunSummary {
+  approved: number;
+  declined: number;
+  referred: number;
+  awaiting_sign_off: { claim_id: string; payout: number }[];
+  needs_handler: string[];
+  in_progress: string[];
+}
+
+export interface Run {
+  run_id: string;
+  kind: "dispatch" | "evaluation" | "claim";
+  concurrency: number;
+  status: RunStatus;
+  summary: RunSummary | null;
+  started_at: string;
+  finished_at: string | null;
+  model: string;
+  reasoning_effort: string;
+  claims: RunClaim[];
+  cost: number;
+  work_seconds: number;
+  elapsed_seconds: number;
+}
+
 export interface Instructions {
   claim: string;
 }
@@ -124,7 +161,10 @@ export const api = {
   policy: (policyId: string) => request<Policy>(`/api/policies/${policyId}`),
   steps: (claimId: string) => request<Step[]>(`/api/claims/${claimId}/steps`),
   instructions: () => request<Instructions>("/api/instructions"),
+  latestDispatch: () => request<Run | null>("/api/dispatches/latest"),
   handlers: () => request<Handler[]>("/api/handlers"),
+  startDispatch: (concurrency: number) =>
+    post<Run>("/api/dispatches", { concurrency }),
   runAgent: (claimId: string) =>
     post<{ status: string }>(`/api/claims/${claimId}/run`),
   signOff: (claimId: string, handlerId: string) =>

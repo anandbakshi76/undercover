@@ -502,46 +502,40 @@ td .mono,
   align-items: baseline;
 }
 
-.run-running,
-.todo-in_progress {
+.run-running {
   background: var(--marigold);
   color: var(--midnight);
 }
 
-.run-finished,
-.todo-done {
+.run-finished {
   background: var(--sea-green);
   color: var(--midnight);
 }
 
-.run-failed,
-.todo-left_for_handler {
+.run-failed {
   background: var(--raspberry);
   color: #ffffff;
 }
 
-.todo-to_do {
-  background: var(--cerulean);
-  color: #ffffff;
+.run-stopped {
+  background: var(--coral);
+  color: var(--midnight);
 }
 
-.todos {
-  display: grid;
-  gap: 8px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.todo {
+.run-facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  align-items: baseline;
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: var(--subtle);
-  overflow-wrap: anywhere;
+  gap: 4px 24px;
+  margin: 8px 0 12px;
+}
+
+.run-table {
+  margin-top: 8px;
+}
+
+.summary-list {
+  margin: 8px 0 0;
+  padding-left: 1.2rem;
 }
 
 .summary {
