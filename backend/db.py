@@ -62,6 +62,8 @@ claims = Table(
     Column("attempts", Integer, nullable=False, server_default="0"),
     Column("run_id", Text),
     Column("thread_id", Text),
+    Column("evaluation_id", Text),
+    Column("source_id", Text),
 )
 runs = Table(
     "runs",
@@ -97,6 +99,23 @@ steps = Table(
     Column("created_at", Text, nullable=False),
 )
 
+eval_claims = Table(
+    "eval_claims",
+    metadata,
+    Column("eval_set", Text, primary_key=True),
+    Column("claim_id", Text, primary_key=True),
+    Column("tiny", Integer, nullable=False),
+    Column("data", Text, nullable=False),
+)
+eval_decisions = Table(
+    "eval_decisions",
+    metadata,
+    Column("eval_set", Text, primary_key=True),
+    Column("claim_id", Text, primary_key=True),
+    Column("decision", Text, nullable=False),
+    Column("payout", Float, nullable=False),
+    Column("data", Text, nullable=False),
+)
 model_calls = Table(
     "model_calls",
     metadata,
@@ -203,6 +222,44 @@ def seed(connection: Connection) -> None:
     )
 
 
+def seed_answer_key(connection: Connection) -> None:
+    """Store the two labelled sets and the handlers' decisions, out of the queue."""
+    sets = {
+        "evaluation": (load("claims.json"), load("evals/decisions.json")),
+        "held_out": (
+            load("evals/held_out_claims.json"),
+            load("evals/held_out_decisions.json"),
+        ),
+    }
+    for name, (claim_records, decisions) in sets.items():
+        tiny = {d["claim_id"]: bool(d.get("tiny")) for d in decisions}
+        connection.execute(
+            insert(eval_claims),
+            [
+                {
+                    "eval_set": name,
+                    "claim_id": record["claim_id"],
+                    "tiny": int(tiny[record["claim_id"]]),
+                    "data": json.dumps(record),
+                }
+                for record in claim_records
+            ],
+        )
+        connection.execute(
+            insert(eval_decisions),
+            [
+                {
+                    "eval_set": name,
+                    "claim_id": d["claim_id"],
+                    "decision": d["decision"],
+                    "payout": d["payout"],
+                    "data": json.dumps(d),
+                }
+                for d in decisions
+            ],
+        )
+
+
 def init() -> None:
     """Create the tables and seed them on first start."""
     if on_postgres():
@@ -212,6 +269,7 @@ def init() -> None:
     with connect() as connection:
         if connection.execute(select(claims.c.claim_id).limit(1)).first() is None:
             seed(connection)
+            seed_answer_key(connection)
 
 
 def reset() -> None:

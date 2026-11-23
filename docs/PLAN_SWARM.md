@@ -178,17 +178,17 @@ START ─▶ list_claims ─ fan_out: one Send per claim ─▶ work_claim ─�
 
 **Success criteria**
 
-- [ ] pytest: after seeding, `eval_claims` holds 25 claims in each set and `eval_decisions` 25 decisions in each, 5 `tiny` in each; the queue still has the same 25 claims
-- [ ] pytest: an evaluation of the evaluation set and one of the held-out set's `tiny` claims leave `list_claims`, the state counts and the claims to work for a dispatch exactly as they were
-- [ ] pytest: the copies have new ids that are also in their records, and a dispatch started afterwards never carries one on
-- [ ] pytest: `get_claim` on a copy holds nothing from the handlers' decisions (no `handler_id`, reason or payout of theirs), and `sign_off` and `start_claim_run` on a copy return 409
-- [ ] pytest: a copy approved over the limit counts as finished, its checkpoints are gone, and the evaluation can finish
-- [ ] pytest: an evaluation's measures match ones worked out by hand on a small set with every kind of mistake (a wrongful decline, a wrongful approval, a needless referral, a wrong amount, a claim not decided counted as a referral)
-- [ ] pytest: a stopped evaluation shows as stopped, and its undecided claims count as referrals
-- [ ] pytest: the evaluation records its set, N, the model and the effort (`none` for another model), and each claim's decision, payout, reason, cost and time
-- [ ] pytest: nothing under `agent/` reads `eval_decisions` or the evaluation scoring operations
-- [ ] pytest: `run_evaluation` in the service works the copies of a `tiny` set with a stub model
-- [ ] `npm run check:python` passes with coverage of 80% or more
+- [x] pytest: after seeding, `eval_claims` holds 25 claims in each set and `eval_decisions` 25 decisions in each, 5 `tiny` in each; the queue still has the same 25 claims
+- [x] pytest: an evaluation of the evaluation set and one of the held-out set's `tiny` claims leave `list_claims`, the state counts and the claims to work for a dispatch exactly as they were
+- [x] pytest: the copies have new ids that are also in their records, and a dispatch started afterwards never carries one on
+- [x] pytest: `get_claim` on a copy holds nothing from the handlers' decisions (no `handler_id`, reason or payout of theirs), and `sign_off` and `start_claim_run` on a copy return 409
+- [x] pytest: a copy approved over the limit counts as finished, its checkpoints are gone, and the evaluation can finish
+- [x] pytest: an evaluation's measures match ones worked out by hand on a small set with every kind of mistake (a wrongful decline, a wrongful approval, a needless referral, a wrong amount, a claim not decided counted as a referral)
+- [x] pytest: a stopped evaluation shows as stopped, and its undecided claims count as referrals
+- [x] pytest: the evaluation records its set, N, the model and the effort (`none` for another model), and each claim's decision, payout, reason, cost and time
+- [x] pytest: nothing under `agent/` reads `eval_decisions` or the evaluation scoring operations
+- [x] pytest: `run_evaluation` in the service works the copies of a `tiny` set with a stub model
+- [x] `npm run check:python` passes with coverage of 80% or more
 
 ## Phase 5: The Scoreboard page
 

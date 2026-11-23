@@ -12,9 +12,11 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import Connection, RowMapping, func, insert, select, update
 
-from backend import agent_service, db, documents, payout
+from backend import agent_service, db, documents, payout, scoring
 from backend.db import (
     claims,
+    eval_claims,
+    eval_decisions,
     model_calls,
     records,
     run_claims,
@@ -90,6 +92,7 @@ def claim_view(row: Row) -> dict[str, Any]:
         "attempts": row["attempts"],
         "thread_id": row["thread_id"],
         "run_id": row["run_id"],
+        "evaluation_id": row["evaluation_id"],
     }
 
 
@@ -104,7 +107,11 @@ def list_claims() -> list[dict[str, Any]]:
     """List the claims queue with where each claim stands."""
     with db.connect() as connection:
         rows = (
-            connection.execute(select(claims).order_by(claims.c.claim_id))
+            connection.execute(
+                select(claims)
+                .where(claims.c.evaluation_id.is_(None))
+                .order_by(claims.c.claim_id)
+            )
             .mappings()
             .all()
         )
@@ -429,6 +436,10 @@ def sign_off(
         if not handler["can_approve_over_limit"]:
             raise HTTPException(403, f"{handler['name']} cannot sign off this claim.")
         row = claim_row(connection, claim_id)
+        if row["evaluation_id"] is not None:
+            raise HTTPException(
+                409, f"Claim {claim_id} is an evaluation copy and cannot be signed off."
+            )
         if row["status"] != "awaiting_sign_off":
             raise HTTPException(409, f"Claim {claim_id} is not waiting for sign-off.")
         connection.execute(
@@ -461,6 +472,23 @@ class RunEnd(BaseModel):
 
 class DispatchStart(BaseModel):
     concurrency: int = Field(ge=1, le=25)
+
+
+EvaluationSet = Literal["evaluation", "held_out"]
+
+
+class EvaluationStart(BaseModel):
+    concurrency: int = Field(ge=1, le=25)
+    evaluation_set: EvaluationSet
+    tiny: bool
+
+
+class NewEvaluation(BaseModel):
+    concurrency: int = Field(ge=1, le=25)
+    evaluation_set: EvaluationSet
+    tiny: bool
+    model: str = Field(min_length=1)
+    reasoning_effort: str = Field(min_length=1)
 
 
 class ClaimStart(BaseModel):
@@ -579,6 +607,7 @@ def new_run(
     concurrency: int,
     model: str = "",
     reasoning_effort: str = "",
+    **evaluation: Any,
 ) -> str:
     if (
         kind in RUN_KINDS
@@ -589,7 +618,8 @@ def new_run(
         ).first()
     ):
         raise HTTPException(409, "A dispatch or evaluation is already running.")
-    run_id = f"RUN-{uuid4().hex[:8]}"
+    prefix = "EVAL" if kind == "evaluation" else "RUN"
+    run_id = f"{prefix}-{uuid4().hex[:8]}"
     connection.execute(
         insert(runs).values(
             run_id=run_id,
@@ -599,6 +629,7 @@ def new_run(
             started_at=now_ms(),
             model=model,
             reasoning_effort=reasoning_effort,
+            **evaluation,
         )
     )
     return run_id
@@ -709,6 +740,121 @@ def create_dispatch(new: NewDispatch) -> dict[str, Any]:
         return run_view(connection, run_id)
 
 
+@app.post("/api/runs/evaluation", operation_id="create_evaluation")
+def create_evaluation(new: NewEvaluation) -> dict[str, Any]:
+    """Create an evaluation with its own copies of a labelled set of claims."""
+    with db.connect() as connection:
+        run_id = new_run(
+            connection,
+            "evaluation",
+            new.concurrency,
+            new.model,
+            new.reasoning_effort,
+            evaluation_set=new.evaluation_set,
+            tiny=int(new.tiny),
+        )
+        wanted = select(eval_claims.c.claim_id, eval_claims.c.data).where(
+            eval_claims.c.eval_set == new.evaluation_set
+        )
+        if new.tiny:
+            wanted = wanted.where(eval_claims.c.tiny == 1)
+        for source_id, data in connection.execute(
+            wanted.order_by(eval_claims.c.claim_id)
+        ):
+            copy_id = f"{run_id}-{source_id}"
+            record = json.loads(data) | {"claim_id": copy_id}
+            connection.execute(
+                insert(claims).values(
+                    claim_id=copy_id,
+                    status="waiting",
+                    data=json.dumps(record),
+                    evaluation_id=run_id,
+                    source_id=source_id,
+                )
+            )
+            join_run(connection, run_id, copy_id)
+        return run_view(connection, run_id)
+
+
+def evaluation_rows(connection: Connection, run: Row) -> list[dict[str, Any]]:
+    """One row for each copy: the agent's answer beside the handler's."""
+    rows = []
+    for item in run_claims_view(connection, run["run_id"]):
+        copy = claim_row(connection, item["claim_id"])
+        key = connection.execute(
+            select(eval_decisions.c.decision, eval_decisions.c.payout).where(
+                eval_decisions.c.eval_set == run["evaluation_set"],
+                eval_decisions.c.claim_id == copy["source_id"],
+            )
+        ).one()
+        handler = {"decision": key[0], "payout": key[1]}
+        agent = scoring.answer(copy["decision"], copy["payout"])
+        rows.append(
+            {
+                "claim_id": item["claim_id"],
+                "source_id": copy["source_id"],
+                "status": item["status"],
+                "handler": handler,
+                "agent": agent,
+                "reason": copy["reason"],
+                "right": scoring.is_right(agent, handler),
+                "mistake_cost": scoring.mistake_cost(agent, handler),
+                "cost": item["cost"],
+                "seconds": item["seconds"],
+                "started_at": item["started_at"],
+            }
+        )
+    return rows
+
+
+def evaluation_view(
+    connection: Connection, run_id: str, with_claims: bool
+) -> dict[str, Any]:
+    run = run_row(connection, run_id)
+    if run["kind"] != "evaluation":
+        raise HTTPException(404, f"There is no evaluation {run_id}.")
+    rows = evaluation_rows(connection, run)
+    view = {
+        "run_id": run_id,
+        "evaluation_set": run["evaluation_set"],
+        "tiny": bool(run["tiny"]),
+        "concurrency": run["concurrency"],
+        "model": run["model"],
+        "reasoning_effort": run["reasoning_effort"],
+        "status": run["status"],
+        "started_at": run["started_at"],
+        "finished_at": run["finished_at"],
+    } | scoring.measures(rows, elapsed_seconds(run))
+    return view | {"claims": rows} if with_claims else view
+
+
+@app.get("/api/evaluations", operation_id="list_evaluations")
+def list_evaluations() -> list[dict[str, Any]]:
+    """List the evaluations, newest first, with their measures."""
+    with db.connect() as connection:
+        ids = list(
+            connection.execute(
+                select(runs.c.run_id)
+                .where(runs.c.kind == "evaluation")
+                .order_by(runs.c.id.desc())
+            ).scalars()
+        )
+        return [evaluation_view(connection, run_id, False) for run_id in ids]
+
+
+@app.get("/api/evaluations/{run_id}", operation_id="get_evaluation")
+def get_evaluation(run_id: str) -> dict[str, Any]:
+    """Get an evaluation with each claim's answer beside the handler's."""
+    with db.connect() as connection:
+        return evaluation_view(connection, run_id, True)
+
+
+@app.post("/api/evaluations", operation_id="start_evaluation")
+def start_evaluation(evaluation: EvaluationStart) -> dict[str, Any]:
+    """Ask the agent's service to start an evaluation of a labelled set."""
+    return agent_service.forward("/api/evaluations", evaluation.model_dump())
+
+
 @app.post("/api/runs/stop-running", operation_id="stop_running_runs")
 def stop_running_runs() -> list[str]:
     """Mark every dispatch or evaluation still running as stopped."""
@@ -757,11 +903,14 @@ def get_run(run_id: str) -> dict[str, Any]:
 def list_claims_to_work(run_id: str) -> list[str]:
     """List the claims a run should work: those in progress, then those waiting."""
     with db.connect() as connection:
-        run_row(connection, run_id)
+        run = run_row(connection, run_id)
         rows = (
             connection.execute(
                 select(claims.c.claim_id, claims.c.status, claims.c.data).where(
-                    claims.c.status.in_(["in_progress", "waiting"])
+                    claims.c.status.in_(["in_progress", "waiting"]),
+                    claims.c.evaluation_id.is_(None)
+                    if run["kind"] != "evaluation"
+                    else claims.c.evaluation_id == run_id,
                 )
             )
             .mappings()
@@ -808,6 +957,10 @@ def start_claim_run(claim_id: str) -> dict[str, str]:
     """Start a run on one waiting claim, without starting an agent."""
     with db.connect() as connection:
         row = claim_row(connection, claim_id)
+        if row["evaluation_id"] is not None:
+            raise HTTPException(
+                409, f"Claim {claim_id} is an evaluation copy and cannot be run."
+            )
         if row["status"] != "waiting":
             raise HTTPException(409, f"Claim {claim_id} is not waiting.")
         run_id = new_run(connection, "claim", 1)

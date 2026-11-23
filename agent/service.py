@@ -4,7 +4,7 @@ import asyncio
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException
@@ -39,6 +39,12 @@ app = FastAPI(title="UnderCover Agent", lifespan=lifespan)
 
 class DispatchStart(BaseModel):
     concurrency: int = Field(ge=1, le=25)
+
+
+class EvaluationStart(BaseModel):
+    concurrency: int = Field(ge=1, le=25)
+    evaluation_set: Literal["evaluation", "held_out"]
+    tiny: bool
 
 
 def start(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
@@ -87,6 +93,21 @@ def run_dispatch(
         },
     )
     background.add_task(work_dispatch, run["run_id"], dispatch.concurrency)
+    return run
+
+
+@app.post("/api/evaluations", operation_id="run_evaluation")
+def run_evaluation(
+    evaluation: EvaluationStart, background: BackgroundTasks
+) -> dict[str, Any]:
+    """Start an evaluation of a labelled set with N claim agents, and work it."""
+    model, effort = main.model_settings()
+    run = start(
+        "POST",
+        "/api/runs/evaluation",
+        evaluation.model_dump() | {"model": model, "reasoning_effort": effort},
+    )
+    background.add_task(work_dispatch, run["run_id"], evaluation.concurrency)
     return run
 
 

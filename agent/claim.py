@@ -368,6 +368,11 @@ def drive(graph: Any, config: Any, claim: dict[str, Any]) -> None:
         return
     stream_steps(graph, graph_input, config, claim["claim_id"])
     if graph.get_state(config).interrupts:
+        if claim["evaluation_id"]:
+            text = "Held for a sign-off. An evaluation copy counts as finished."
+            post_step(claim["claim_id"], "reply", text)
+            graph.checkpointer.delete_thread(config["configurable"]["thread_id"])
+            return
         held = main.call("GET", f"/api/claims/{claim['claim_id']}")
         payout = money(held["decision"]["payout"])
         text = f"The payout of {payout} waits for a handler's sign-off."
