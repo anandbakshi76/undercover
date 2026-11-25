@@ -4,9 +4,10 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from backend import agent_service, auth
+from backend import agent_service, auth, judge
 from backend.main import app
 from backend.tests import sign_in
+from backend.tests.stub_judge import StubJev
 
 
 class StandIn:
@@ -41,6 +42,15 @@ def agent(monkeypatch):
     stand_in = StandIn()
     monkeypatch.setattr(agent_service, "client", stand_in.client)
     return stand_in
+
+
+@pytest.fixture(autouse=True)
+def jev(monkeypatch):
+    """A stand-in for the judge, so that no test calls it."""
+    monkeypatch.delenv("MODEL_NAME", raising=False)
+    stub = StubJev()
+    monkeypatch.setattr(judge, "client", lambda: stub)
+    return stub
 
 
 @pytest.fixture(autouse=True)

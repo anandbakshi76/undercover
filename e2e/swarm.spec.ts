@@ -203,15 +203,25 @@ test("the scoreboard shows an evaluation played out through the API", async ({
   await expect(row).toContainText("Finished");
   await expect(row).toContainText("$0.0200");
   await expect(row).toContainText("6.0 s");
+  await expect(row).toContainText("1.68");
   await expect(row).toContainText("%");
   await row.getByRole("link").click();
 
   const measures = page.getByLabel("Measures");
+  await expect(measures).toContainText("Grade");
+  await expect(measures).toContainText("1.68");
+  await expect(measures).toContainText("Judge cost");
   await expect(measures).toContainText("Decision accuracy");
   await expect(measures).toContainText("Cost of mistakes");
   await expect(measures).toContainText("Straight through");
   const claimsTable = page.getByRole("table", { name: "Evaluation claims" });
   await expect(claimsTable.getByRole("row")).toHaveCount(6);
+  const graded = claimsTable.getByRole("row").nth(1);
+  await expect(graded).toContainText("B");
+  await expect(graded).toContainText("2.10");
+  await expect(graded).toContainText("Yes");
+  await expect(graded).toContainText("No");
+  await expect(claimsTable.getByRole("row").nth(5)).toContainText("0.00");
   await expect(
     claimsTable.getByText("Match").or(claimsTable.getByText("Miss")).first(),
   ).toBeVisible();

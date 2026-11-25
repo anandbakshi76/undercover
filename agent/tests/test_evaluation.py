@@ -117,5 +117,7 @@ def test_the_agent_never_asks_for_the_answer_key():
         source = path.read_text(encoding="utf-8")
         assert "eval_decisions" not in source, path
         assert "scoring" not in source, path
+        for forbidden in ["judge", "grades"]:
+            assert forbidden not in source, (forbidden, path)
         calls = re.findall(r'call\(\s*"GET",\s*f?"/api/evaluations', source)
         assert calls == [], path

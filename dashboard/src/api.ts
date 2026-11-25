@@ -130,6 +130,8 @@ export interface Measures {
   cost_per_claim: number;
   seconds_per_claim: number;
   run_seconds: number;
+  grade: number | null;
+  judge_cost: number;
 }
 
 export interface Evaluation extends Measures {
@@ -149,6 +151,13 @@ export interface Answer {
   payout: number;
 }
 
+export interface ClaimGrade {
+  score: number;
+  letter: "A" | "B" | "C" | "F";
+  same_grounds: number;
+  same_section: number;
+}
+
 export interface EvaluationClaim {
   claim_id: string;
   source_id: string;
@@ -161,6 +170,8 @@ export interface EvaluationClaim {
   cost: number;
   seconds: number;
   started_at: string | null;
+  grade: ClaimGrade | null;
+  judge_cost: number;
 }
 
 export interface EvaluationDetail extends Evaluation {

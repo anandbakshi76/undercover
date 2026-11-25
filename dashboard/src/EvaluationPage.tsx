@@ -1,15 +1,17 @@
 import { useCallback } from "react";
-import { api } from "./api";
+import { api, type ClaimGrade } from "./api";
 import { Badge } from "./Badge";
 import {
   clock,
   cost,
   DECISION_LABELS,
   duration,
+  gradeText,
   money,
   percent,
   RUN_LABELS,
   SET_LABELS,
+  yesNo,
 } from "./format";
 import { useLoad } from "./hooks";
 
@@ -28,6 +30,26 @@ function Answer({
   );
 }
 
+function GradeCells({ grade }: Readonly<{ grade: ClaimGrade | null }>) {
+  if (grade === null) {
+    return (
+      <td colSpan={3} className="note">
+        Not graded
+      </td>
+    );
+  }
+  return (
+    <>
+      <td className="number mono">
+        <span className="badge grade">{grade.letter}</span>{" "}
+        {gradeText(grade.score)}
+      </td>
+      <td>{yesNo(grade.same_grounds)}</td>
+      <td>{yesNo(grade.same_section)}</td>
+    </>
+  );
+}
+
 export function EvaluationPage({ runId }: Readonly<{ runId: string }>) {
   const load = useCallback(() => api.evaluation(runId), [runId]);
   const { data, error } = useLoad(
@@ -41,11 +63,13 @@ export function EvaluationPage({ runId }: Readonly<{ runId: string }>) {
   const measures: [string, string][] = [
     ["Decision accuracy", percent(data.decision_accuracy)],
     ["Accuracy", percent(data.accuracy)],
+    ["Grade", gradeText(data.grade)],
     ["Cost of mistakes", money(data.cost_of_mistakes)],
     ["Straight through", percent(data.straight_through)],
     ["Cost per claim", cost(data.cost_per_claim)],
     ["Time per claim", duration(data.seconds_per_claim)],
     ["Run time", duration(data.run_seconds)],
+    ["Judge cost", cost(data.judge_cost)],
   ];
 
   return (
@@ -86,6 +110,11 @@ export function EvaluationPage({ runId }: Readonly<{ runId: string }>) {
               <th scope="col">Agent</th>
               <th scope="col">Result</th>
               <th scope="col" className="number">
+                Grade
+              </th>
+              <th scope="col">Same grounds</th>
+              <th scope="col">Same section</th>
+              <th scope="col" className="number">
                 Cost of mistake
               </th>
               <th scope="col" className="number">
@@ -121,6 +150,7 @@ export function EvaluationPage({ runId }: Readonly<{ runId: string }>) {
                     {item.right ? "Match" : "Miss"}
                   </span>
                 </td>
+                <GradeCells grade={item.grade} />
                 <td className="number mono">{money(item.mistake_cost)}</td>
                 <td className="number mono">{cost(item.cost)}</td>
                 <td className="number mono">{duration(item.seconds)}</td>

@@ -5,9 +5,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent import checkpoints, main
-from backend import agent_service, auth, db
+from backend import agent_service, auth, db, judge
 from backend.main import app
 from backend.tests import sign_in
+from backend.tests.stub_judge import StubJev
 
 
 def refuse(request):
@@ -24,6 +25,8 @@ def fresh_backend(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "RETRY_DELAY", 0)
     down = httpx.Client(base_url="http://agent", transport=httpx.MockTransport(refuse))
     monkeypatch.setattr(agent_service, "client", lambda: down)
+    stub = StubJev()
+    monkeypatch.setattr(judge, "client", lambda: stub)
     checkpoints.memory.cache_clear()
 
 

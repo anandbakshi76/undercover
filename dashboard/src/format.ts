@@ -78,3 +78,11 @@ export const SET_LABELS: Record<EvaluationSet, string> = {
 export function percent(share: number): string {
   return `${(share * 100).toFixed(0)}%`;
 }
+
+export function yesNo(probability: number): string {
+  return probability >= 0.5 ? "Yes" : "No";
+}
+
+export function gradeText(score: number | null): string {
+  return score === null ? "Not graded" : score.toFixed(2);
+}

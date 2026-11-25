@@ -215,6 +215,8 @@ export function evaluation(overrides: Partial<Evaluation> = {}): Evaluation {
     cost_per_claim: 0.0123,
     seconds_per_claim: 31.4,
     run_seconds: 83,
+    grade: 1.4,
+    judge_cost: 0.0112,
     ...overrides,
   };
 }
@@ -234,6 +236,8 @@ export function evaluationClaim(
     cost: 0.0123,
     seconds: 12.5,
     started_at: "2026-11-08T10:00:01.000+00:00",
+    grade: { score: 2.1, letter: "B", same_grounds: 0.9, same_section: 0.1 },
+    judge_cost: 0.0004,
     ...overrides,
   };
 }

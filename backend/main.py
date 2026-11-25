@@ -9,13 +9,14 @@ from uuid import uuid4
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import Connection, RowMapping, func, insert, select, update
+from sqlalchemy import Connection, RowMapping, delete, func, insert, select, update
 
 from backend import (
     agent_service,
     auth,
     db,
     documents,
+    judge,
     payout,
     scoring,
     settings,
@@ -26,6 +27,7 @@ from backend.db import (
     configurations,
     eval_claims,
     eval_decisions,
+    grades,
     model_calls,
     platform_settings,
     recipes,
@@ -805,6 +807,61 @@ def create_evaluation(new: NewEvaluation) -> dict[str, Any]:
         return run_view(connection, run_id)
 
 
+def grade_view(mark: Row | None) -> dict[str, Any] | None:
+    """A claim's grade with its two checks, or None when it wasn't graded."""
+    if mark is None or not mark["graded"]:
+        return None
+    return {
+        "score": mark["grade"],
+        "letter": mark["letter"],
+        "same_grounds": mark["same_grounds"],
+        "same_section": mark["same_section"],
+    }
+
+
+def judge_items(connection: Connection, run: Row) -> list[dict[str, Any]]:
+    """What the judge needs for each copy: the agent's explanation and the handler's."""
+    copies = connection.execute(
+        select(claims).where(claims.c.evaluation_id == run["run_id"])
+    ).mappings()
+    key = {
+        claim_id: json.loads(data)
+        for claim_id, data in connection.execute(
+            select(eval_decisions.c.claim_id, eval_decisions.c.data).where(
+                eval_decisions.c.eval_set == run["evaluation_set"]
+            )
+        ).all()
+    }
+    return [
+        {
+            "claim_id": copy["claim_id"],
+            "decision": copy["decision"],
+            "rationale": copy["reason"],
+            "expected": key[copy["source_id"]],
+        }
+        for copy in copies
+    ]
+
+
+def store_grades(
+    connection: Connection, run_id: str, results: dict[str, dict[str, Any] | None]
+) -> None:
+    connection.execute(delete(grades).where(grades.c.run_id == run_id))
+    for claim_id, result in results.items():
+        connection.execute(
+            insert(grades).values(
+                run_id=run_id,
+                claim_id=claim_id,
+                graded=int(result is not None),
+                grade=result["grade"] if result else None,
+                letter=result["letter"] if result else None,
+                same_grounds=result["same_grounds"] if result else None,
+                same_section=result["same_section"] if result else None,
+                judge_cost=result["judge_cost"] if result else 0.0,
+            )
+        )
+
+
 def evaluation_rows(connection: Connection, run: Row) -> list[dict[str, Any]]:
     """One row for each copy: the agent's answer beside the handler's."""
     copies = {
@@ -823,9 +880,16 @@ def evaluation_rows(connection: Connection, run: Row) -> list[dict[str, Any]]:
             ).where(eval_decisions.c.eval_set == run["evaluation_set"])
         ).all()
     }
+    graded = {
+        row["claim_id"]: row
+        for row in connection.execute(
+            select(grades).where(grades.c.run_id == run["run_id"])
+        ).mappings()
+    }
     rows = []
     for item in run_claims_view(connection, run["run_id"]):
         copy = copies[item["claim_id"]]
+        mark = graded.get(item["claim_id"])
         handler = key[copy["source_id"]]
         agent = scoring.answer(copy["decision"], copy["payout"])
         rows.append(
@@ -841,6 +905,8 @@ def evaluation_rows(connection: Connection, run: Row) -> list[dict[str, Any]]:
                 "cost": item["cost"],
                 "seconds": item["seconds"],
                 "started_at": item["started_at"],
+                "grade": grade_view(mark),
+                "judge_cost": mark["judge_cost"] if mark else 0.0,
             }
         )
     return rows
@@ -977,9 +1043,16 @@ def list_claims_to_work(run_id: str) -> list[str]:
 
 @app.post("/api/runs/{run_id}/finish", operation_id="finish_run")
 def finish_run(run_id: str, end: RunEnd) -> dict[str, Any]:
-    """Record that a run has finished or failed, with a summary from the records."""
+    """Record that a run has finished or failed, grading an evaluation's claims."""
     with db.connect() as connection:
-        run_row(connection, run_id)
+        run = run_row(connection, run_id)
+        grading = (
+            run["kind"] == "evaluation" and end.status == "finished" and judge.enabled()
+        )
+        items = judge_items(connection, run) if grading else []
+    results = judge.grade_all(items)
+    with db.connect() as connection:
+        store_grades(connection, run_id, results)
         end_run(connection, run_id, end.status)
         return run_view(connection, run_id)
 

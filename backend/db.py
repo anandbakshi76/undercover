@@ -168,6 +168,18 @@ eval_decisions = Table(
     Column("payout", Float, nullable=False),
     Column("data", Text, nullable=False),
 )
+grades = Table(
+    "grades",
+    metadata,
+    Column("run_id", Text, primary_key=True),
+    Column("claim_id", Text, primary_key=True),
+    Column("graded", Integer, nullable=False),
+    Column("grade", Float),
+    Column("letter", Text),
+    Column("same_grounds", Float),
+    Column("same_section", Float),
+    Column("judge_cost", Float, nullable=False),
+)
 model_calls = Table(
     "model_calls",
     metadata,

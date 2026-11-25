@@ -3,6 +3,7 @@ import { defineConfig } from "@playwright/test";
 const backend = "http://127.0.0.1:8001";
 const agent = "http://127.0.0.1:8003";
 const auth = "http://127.0.0.1:8004";
+const judge = "http://127.0.0.1:8005";
 
 export default defineConfig({
   testDir: "e2e",
@@ -13,6 +14,11 @@ export default defineConfig({
     {
       command: "node e2e/agent-stand-in.js",
       url: `${agent}/requests`,
+      reuseExistingServer: false,
+    },
+    {
+      command: "node e2e/judge-stand-in.js",
+      url: `${judge}/health`,
       reuseExistingServer: false,
     },
     {
@@ -28,6 +34,8 @@ export default defineConfig({
         UNDERCOVER_DB: "e2e/test.db",
         UNDERCOVER_AGENT: agent,
         VITE_SUPABASE_URL: auth,
+        JUDGE_SERVER_URL: judge,
+        OPENROUTER_API_KEY: "e2e-key",
       },
       reuseExistingServer: false,
     },

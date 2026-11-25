@@ -47,7 +47,10 @@ def measures(rows: list[dict[str, Any]], run_seconds: float) -> dict[str, Any]:
             "cost_per_claim": 0.0,
             "seconds_per_claim": 0.0,
             "run_seconds": run_seconds,
+            "grade": None,
+            "judge_cost": 0.0,
         }
+    graded = [r["grade"]["score"] for r in rows if r["grade"] is not None]
     return {
         "claim_count": count,
         "decision_accuracy": sum(
@@ -61,4 +64,6 @@ def measures(rows: list[dict[str, Any]], run_seconds: float) -> dict[str, Any]:
         "cost_per_claim": sum(r["cost"] for r in rows) / count,
         "seconds_per_claim": sum(r["seconds"] for r in rows) / count,
         "run_seconds": run_seconds,
+        "grade": sum(graded) / len(graded) if graded else None,
+        "judge_cost": sum(r["judge_cost"] for r in rows),
     }

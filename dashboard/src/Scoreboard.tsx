@@ -4,6 +4,7 @@ import {
   cost,
   dateTime,
   duration,
+  gradeText,
   money,
   percent,
   RUN_LABELS,
@@ -117,6 +118,9 @@ export function Scoreboard() {
                   Accuracy
                 </th>
                 <th scope="col" className="number">
+                  Grade
+                </th>
+                <th scope="col" className="number">
                   Cost of mistakes
                 </th>
                 <th scope="col" className="number">
@@ -160,6 +164,7 @@ export function Scoreboard() {
                     {percent(item.decision_accuracy)}
                   </td>
                   <td className="number mono">{percent(item.accuracy)}</td>
+                  <td className="number mono">{gradeText(item.grade)}</td>
                   <td className="number mono">
                     {money(item.cost_of_mistakes)}
                   </td>

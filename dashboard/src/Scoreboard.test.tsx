@@ -284,3 +284,66 @@ it("shows an error when the evaluation cannot load", async () => {
     "There is no evaluation EVAL-9.",
   );
 });
+
+it("shows the average grade beside the other measures, and says when there is none", async () => {
+  mockApi({
+    "GET /api/evaluations": [
+      evaluation({ run_id: "EVAL-0003", grade: 1.4 }),
+      evaluation({ run_id: "EVAL-0002", grade: null }),
+    ],
+  });
+  render(<Scoreboard />);
+  const table = await screen.findByRole("table", { name: "Evaluations" });
+  expect(
+    within(table).getByRole("columnheader", { name: "Grade" }),
+  ).toBeDefined();
+  const cells = within(table)
+    .getAllByRole("row")
+    .slice(1)
+    .map((row) => row.textContent);
+  expect(cells[0]).toContain("1.40");
+  expect(cells[1]).toContain("Not graded");
+});
+
+it("shows each claim's grade with its two checks as yes or no", async () => {
+  mockApi({
+    "GET /api/evaluations/EVAL-0001": evaluationDetail({
+      claims: [
+        evaluationClaim(),
+        evaluationClaim({
+          claim_id: "EVAL-0001-CLM-1002",
+          source_id: "CLM-1002",
+          grade: {
+            score: 0.3,
+            letter: "F",
+            same_grounds: 0.2,
+            same_section: 0.8,
+          },
+        }),
+        evaluationClaim({
+          claim_id: "EVAL-0001-CLM-1003",
+          source_id: "CLM-1003",
+          grade: null,
+        }),
+      ],
+    }),
+  });
+  render(<EvaluationPage runId="EVAL-0001" />);
+  const measures = await screen.findByLabelText("Measures");
+  expect(within(measures).getByText("1.40")).toBeDefined();
+  expect(within(measures).getByText("$0.0112")).toBeDefined();
+  const rows = within(
+    screen.getByRole("table", { name: "Evaluation claims" }),
+  ).getAllByRole("row");
+  const good = within(rows[1]);
+  expect(good.getByText("B")).toBeDefined();
+  expect(good.getByText("2.10")).toBeDefined();
+  expect(good.getByText("Yes")).toBeDefined();
+  expect(good.getByText("No")).toBeDefined();
+  const bad = within(rows[2]);
+  expect(bad.getByText("F")).toBeDefined();
+  expect(bad.getByText("0.30")).toBeDefined();
+  expect(bad.getByText("No", { selector: "td" })).toBeDefined();
+  expect(bad.getByText("Yes")).toBeDefined();
+  expect(within(rows[3]).getByText("Not graded")).toBeDefined();
+});

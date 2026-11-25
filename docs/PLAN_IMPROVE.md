@@ -141,15 +141,15 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 
 **Success criteria** (pytest with a stub judge, no network)
 
-- [ ] the letter is the most likely level, not the rounded score (a case where they differ), and the score is Jev's `score`
-- [ ] an undecided claim is graded F with no call to the judge; a claim whose call fails or times out is not graded and left out of the average; an evaluation with no graded claims has no grade
-- [ ] the grades are made as the evaluation finishes, in parallel, with the 10-second timeout and retries off passed on each call, and `server_url` is the one read from the environment
-- [ ] the judge's cost is recorded with the evaluation and is not in the claim agent's cost
-- [ ] the average grade matches one worked out by hand, and shows on the scoreboard's list and the evaluation page
-- [ ] nothing under `agent/` can reach the judge or the grades (the guard test covers the new operations)
-- [ ] vitest: the grade, the letter and the two checks show on an evaluation's claims, with "Not graded" and an empty average handled
-- [ ] Live check: Jev grades the lab's four test rationales for CLM-1001 as the lab says it should, through the real endpoint (a few thousandths of a cent)
-- [ ] `npm run check` passes with `.env` moved out of the way
+- [x] the letter is the most likely level, not the rounded score (a case where they differ), and the score is Jev's `score`
+- [x] an undecided claim is graded F with no call to the judge; a claim whose call fails or times out is not graded and left out of the average; an evaluation with no graded claims has no grade
+- [x] the grades are made as the evaluation finishes, in parallel, with the 10-second timeout and retries off passed on each call, and `server_url` is the one read from the environment
+- [x] the judge's cost is recorded with the evaluation and is not in the claim agent's cost
+- [x] the average grade matches one worked out by hand, and shows on the scoreboard's list and the evaluation page
+- [x] nothing under `agent/` can reach the judge or the grades (the guard test covers the new operations)
+- [x] vitest: the grade, the letter and the two checks show on an evaluation's claims, with "Not graded" and an empty average handled
+- [x] Live check: Jev grades the lab's four test rationales for CLM-1001 as the lab says it should, through the real endpoint (a few thousandths of a cent)
+- [x] `npm run check` passes with `.env` moved out of the way
 
 ## Phase 4: The improver
 
