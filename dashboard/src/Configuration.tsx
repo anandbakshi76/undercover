@@ -102,8 +102,17 @@ export function Configuration() {
       </>
     );
   }
-  if (!versions.data || !current.data)
-    return <Loading what="the configuration" />;
+  if (!versions.data || !current.data) {
+    return (
+      <>
+        <PageHeader
+          title="Configuration"
+          purpose="The claim agent's versions."
+        />
+        <Loading what="the configuration" />
+      </>
+    );
+  }
 
   const shownVersion = chosen ?? current.data.version;
   const newestFirst = [...versions.data].sort((a, b) => b.version - a.version);

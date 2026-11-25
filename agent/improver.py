@@ -13,6 +13,8 @@ from langchain.agents.middleware import (
     AgentState,
     HumanInTheLoopMiddleware,
     ModelCallLimitMiddleware,
+    ModelRequest,
+    ModelResponse,
     hook_config,
 )
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -99,19 +101,25 @@ class Watch(AgentMiddleware):
             return {"jump_to": "end"}
         return None
 
-    def after_model(self, state: AgentState, runtime: Runtime) -> None:
-        """Record what the model call cost."""
-        last = state["messages"][-1]
-        usage = last.response_metadata.get("token_usage") if last else None
-        if usage:
-            improver_api.record_call(
-                self.round_id,
-                {
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "cost": usage.get("cost") or 0.0,
-                },
-            )
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        """Record what the model call cost, before any approval pause can skip it."""
+        response = handler(request)
+        for reply in response.result:
+            usage = reply.response_metadata.get("token_usage")
+            if usage:
+                improver_api.record_call(
+                    self.round_id,
+                    {
+                        "prompt_tokens": usage.get("prompt_tokens", 0),
+                        "completion_tokens": usage.get("completion_tokens", 0),
+                        "cost": usage.get("cost") or 0.0,
+                    },
+                )
+        return response
 
 
 def evaluate(round_id: str, version: int, evaluation_set: str, concurrency: int) -> str:

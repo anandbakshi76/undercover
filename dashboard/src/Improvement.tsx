@@ -104,8 +104,14 @@ export function Improvement() {
       </>
     );
   }
-  if (!rounds.data || !recipes.data)
-    return <Loading what="the improvement rounds" />;
+  if (!rounds.data || !recipes.data) {
+    return (
+      <>
+        {header}
+        <Loading what="the improvement rounds" />
+      </>
+    );
+  }
 
   const open = rounds.data.find((r) => WORKING.has(r.status)) ?? null;
   const latest = open ?? rounds.data.at(0) ?? null;

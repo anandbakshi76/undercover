@@ -37,7 +37,7 @@ export function RoundsTable({ rounds }: Readonly<{ rounds: Round[] }>) {
     );
   }
   return (
-    <table>
+    <table className="rounds">
       <thead>
         <tr>
           <th scope="col">Round</th>
@@ -68,7 +68,11 @@ export function RoundsTable({ rounds }: Readonly<{ rounds: Round[] }>) {
             <td className="mono">{round.round_id}</td>
             <td>{dateTime(round.started_at)}</td>
             <td className="mono">{round.version_tried ?? "None"}</td>
-            <td>{round.reason ?? ""}</td>
+            <td>
+              <span className="clamp" title={round.reason ?? undefined}>
+                {round.reason ?? ""}
+              </span>
+            </td>
             <td className="number mono">
               {round.before ? percent(round.before.accuracy) : "-"}
             </td>

@@ -115,3 +115,14 @@ def test_a_free_model_runs_no_rounds(monkeypatch):
     client = TestClient(service.app)
     refused = client.post("/api/rounds", json={"started_by": "HND-01"})
     assert refused.status_code == 409
+
+
+def test_a_call_that_ends_in_a_proposal_is_still_counted_against_the_round(
+    monkeypatch,
+):
+    created = new_round()
+    build(monkeypatch, call_tool("propose_change", **GOOD))
+    graph = improver.build(created["round_id"], "Recipe.")
+    run(graph, {"messages": [HumanMessage("Begin.")]})
+    shown = main.call("GET", f"/api/rounds/{created['round_id']}")
+    assert shown["spent"] == 0.01

@@ -16,6 +16,41 @@ import { PageHeader } from "./PageHeader";
 import { Empty, ErrorState, Loading } from "./States";
 import { DEFAULT_CONCURRENCY, MAX_CONCURRENCY } from "./Queue";
 
+function EvaluationConfirm({
+  tiny,
+  evaluationSet,
+  concurrency,
+  busy,
+  onConfirm,
+  onCancel,
+}: Readonly<{
+  tiny: boolean;
+  evaluationSet: EvaluationSet;
+  concurrency: number;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}>) {
+  return (
+    <ConfirmDialog
+      title="Start an evaluation?"
+      confirmLabel="Start the evaluation"
+      busy={busy}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    >
+      <p>
+        The claim agent works {tiny ? "5 claims of" : "the whole of"} the{" "}
+        {SET_LABELS[evaluationSet].toLowerCase()} with {concurrency} claim
+        agents at once, on the current version.
+      </p>
+    </ConfirmDialog>
+  );
+}
+
+const BOARD_PURPOSE =
+  "How often the claim agent agrees with our handlers, what each claim costs and how long it takes.";
+
 export function Scoreboard() {
   const [concurrency, setConcurrency] = useState(DEFAULT_CONCURRENCY);
   const [evaluationSet, setEvaluationSet] =
@@ -26,16 +61,23 @@ export function Scoreboard() {
   );
   const action = useAction();
   const [confirming, setConfirming] = useState(false);
+  const header = <PageHeader title="Scoreboard" purpose={BOARD_PURPOSE} />;
 
-  if (error) {
+  if (error || !data) {
     return (
-      <ErrorState
-        message={error}
-        next="Check that the backend is running, then reload the page."
-      />
+      <>
+        {header}
+        {error ? (
+          <ErrorState
+            message={error}
+            next="Check that the backend is running, then reload the page."
+          />
+        ) : (
+          <Loading what="the scoreboard" />
+        )}
+      </>
     );
   }
-  if (!data) return <Loading what="the scoreboard" />;
 
   const running = data.some((item) => item.status === "running");
   const start = () =>
@@ -47,10 +89,7 @@ export function Scoreboard() {
 
   return (
     <>
-      <PageHeader
-        title="Scoreboard"
-        purpose="How often the claim agent agrees with our handlers, what each claim costs and how long it takes."
-      />
+      {header}
       <form
         className="panel eval-form"
         onSubmit={(event) => {
@@ -108,21 +147,16 @@ export function Scoreboard() {
       </form>
       {action.error && <p role="alert">{action.error}</p>}
       {confirming && (
-        <ConfirmDialog
-          title="Start an evaluation?"
-          confirmLabel="Start the evaluation"
+        <EvaluationConfirm
+          tiny={tiny}
+          evaluationSet={evaluationSet}
+          concurrency={concurrency}
           busy={action.busy}
           onConfirm={() => void start()}
           onCancel={() => {
             setConfirming(false);
           }}
-        >
-          <p>
-            The claim agent works {tiny ? "5 claims of" : "the whole of"} the{" "}
-            {SET_LABELS[evaluationSet].toLowerCase()} with {concurrency} claim
-            agents at once, on the current version.
-          </p>
-        </ConfirmDialog>
+        />
       )}
       {data.length === 0 ? (
         <Empty

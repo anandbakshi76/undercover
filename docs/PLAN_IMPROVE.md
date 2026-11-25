@@ -100,7 +100,7 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 - [x] vitest: the sign-in page signs in and goes to the queue, shows Supabase's message for a wrong password, and has no sign-up; every other route sends a signed-out visitor to sign-in; the header shows the handler and signs out; the claim page's sign-off has no handler list and says who signs off; a handler who can't sign off sees why and has no button
 - [x] e2e: every spec signs in through the Auth stand-in, a sign-off is made by the signed-in handler, and an unauthenticated request to the backend is refused
 - [x] Live check: with `.env`'s Supabase settings, each of the three handlers signs in with `HANDLER_PASSWORD` (a read-only call to `/auth/v1/token`), sign-ups are off (`/auth/v1/settings`), and the backend accepts a real token for `get_me`
-- [ ] (done with the live runs in Phase 7) Playwright MCP: signed in as Dana through the real Supabase page, the queue, a claim and sign-out work in light and dark mode
+- [x] (done with the live runs in Phase 7) Playwright MCP: signed in as Dana through the real Supabase page, the queue, a claim and sign-out work in light and dark mode
 - [x] `npm run check` passes with `.env` moved out of the way
 
 ## Phase 2: Settings, and the configuration's versions
@@ -127,7 +127,7 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 - [x] pytest: with `MODEL_NAME` set the only model allowed is that one at `default`, priced at 0
 - [x] vitest: the Settings page shows every setting, lets a senior handler change one only after a confirmation, tells another handler what they can't do and why, and keeps the appearance in the browser; the Configuration page shows the versions, marks the current one and shows the diff; the shared components render their states
 - [x] e2e: a handler changes a setting through the dialog, switches the theme, and opens the Configuration page
-- [ ] (done with the live runs in Phase 7) Playwright MCP: Settings and Configuration in light and dark mode, with no horizontal scroll at laptop width
+- [x] (done with the live runs in Phase 7) Playwright MCP: Settings and Configuration in light and dark mode, with no horizontal scroll at laptop width
 - [x] `npm run check` passes with `.env` moved out of the way
 
 ## Phase 3: The judge
@@ -219,7 +219,7 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 - [x] vitest: every page renders the shared header (the Queue's is tested; the others use the same component), the navigation marks the current page, numbers are right-aligned (the Queue's claimed amounts are class-tested), and loading and error states say what to do next
 - [x] vitest: starting a dispatch, an evaluation and a sign-off each open the confirmation before calling the backend (Cancel is tested for the first two)
 - [ ] e2e: the existing specs still pass unchanged in what they do (only the confirmation clicks are added), and the pages refresh without their layout moving (the heights of the header and the main panels are the same before and after a refresh) (the specs pass with the confirmation clicks added, apart from one sign-in spec that failed once in the full run and passed alone; the layout-stability check is not written yet)
-- [ ] Playwright MCP: every page in light and dark mode, at a laptop width and at phone width, with no horizontal page scroll, checked against `docs/BRAND.md` and point 8 of the brief (left for Phase 7)
+- [x] Playwright MCP: every page in light and dark mode, at a laptop width and at phone width, with no horizontal page scroll, checked against `docs/BRAND.md` and point 8 of the brief (left for Phase 7)
 - [ ] `npm run check` passes with `.env` moved out of the way (left for Phase 7)
 
 ## Phase 7: Live runs and the handover
@@ -235,11 +235,11 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 
 **Success criteria**
 
-- [ ] live step 1: two rounds, the first proposal rejected with a reason and the improver's next proposal approved, each round's stages seen on the page as they happen, the scores before and after, the verdict and the cost shown afterwards, and the Configuration page's versions and diffs
-- [ ] Langfuse's API returns each round's improver traces in one session, and the claims of its evaluations by the round's tag
-- [ ] version 1's two held-out runs: how far they differed on each measure, beside the noise and the tolerance, reported in `docs/STATUS.md`
-- [ ] live step 2: a dispatch at N=25 on the current version records that version; Marcus can't sign off the held payout or change a setting, and the page and the backend both say why; Dana signs it off and it is paid
-- [ ] live step 3: screenshots of every page in light and dark mode, one fresh subagent review, and what it found fixed (or noted, with a reason, in `docs/STATUS.md`)
-- [ ] live step 4: the live checks' spend is reported and is under $1
-- [ ] `docs/SPEC.md`, `docs/TECH_STACK.md`, `docs/PROCESS.md`, `docs/CODE_STANDARDS.md`, `docs/STATUS.md` and `data/README.md` describe the product as it now is
+- [x] live step 1: two rounds, the first proposal rejected with a reason and the improver's next proposal approved, each round's stages seen on the page as they happen, the scores before and after, the verdict and the cost shown afterwards, and the Configuration page's versions and diffs
+- [x] Langfuse's API returns each round's improver traces in one session, and the claims of its evaluations by the round's tag
+- [x] version 1's two held-out runs: how far they differed on each measure, beside the noise and the tolerance, reported in `docs/STATUS.md`
+- [x] live step 2: a dispatch at N=25 on the current version records that version; Marcus can't sign off the held payout or change a setting, and the page and the backend both say why; Dana signs it off and it is paid
+- [x] live step 3: screenshots of every page in light and dark mode, one fresh subagent review, and what it found fixed (or noted, with a reason, in `docs/STATUS.md`)
+- [x] live step 4: the live checks' spend is reported and is under $1
+- [x] `docs/SPEC.md`, `docs/TECH_STACK.md`, `docs/PROCESS.md`, `docs/CODE_STANDARDS.md`, `docs/STATUS.md` and `data/README.md` describe the product as it now is
 - [ ] `npm run check` passes with `.env` moved out of the way: ruff, pyright, pytest at 80% or more, Prettier, ESLint, tsc, vitest at 80% or more, and Playwright

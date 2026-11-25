@@ -16,6 +16,8 @@ import { ErrorState, Loading } from "./States";
 
 export const DEFAULT_CONCURRENCY = 3;
 export const MAX_CONCURRENCY = 25;
+const QUEUE_PURPOSE =
+  "Claims waiting for a decision, and the dispatch that works them.";
 
 async function loadQueue() {
   const [claims, run] = await Promise.all([api.claims(), api.latestDispatch()]);
@@ -35,13 +37,23 @@ export function Queue() {
 
   if (error) {
     return (
-      <ErrorState
-        message={error}
-        next="Check that the backend is running, then reload the page."
-      />
+      <>
+        <PageHeader title="Claims queue" purpose={QUEUE_PURPOSE} />
+        <ErrorState
+          message={error}
+          next="Check that the backend is running, then reload the page."
+        />
+      </>
     );
   }
-  if (!data) return <Loading what="the queue" />;
+  if (!data) {
+    return (
+      <>
+        <PageHeader title="Claims queue" purpose={QUEUE_PURPOSE} />
+        <Loading what="the queue" />
+      </>
+    );
+  }
 
   const { claims, run } = data;
   const running = run?.status === "running";
@@ -54,10 +66,7 @@ export function Queue() {
 
   return (
     <>
-      <PageHeader
-        title="Claims queue"
-        purpose="Claims waiting for a decision, and the dispatch that works them."
-      >
+      <PageHeader title="Claims queue" purpose={QUEUE_PURPOSE}>
         <form
           className="run-form"
           onSubmit={(event) => {

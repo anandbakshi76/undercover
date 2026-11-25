@@ -928,3 +928,41 @@ button.secondary[aria-pressed="true"] {
   margin: 0 0 4px;
   font-size: 0.875rem;
 }
+
+.state-loading {
+  min-height: 240px;
+}
+
+button:disabled {
+  background: var(--subtle);
+  color: var(--muted);
+  opacity: 1;
+}
+
+.table-panel th:last-child,
+.table-panel td:last-child {
+  padding-right: 16px;
+}
+
+main > .panel {
+  margin-bottom: 16px;
+}
+
+.table-panel button {
+  white-space: nowrap;
+}
+
+.rounds td:nth-child(2) {
+  min-width: 100px;
+}
+
+.rounds td:nth-child(4) {
+  min-width: 180px;
+}
+
+.clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
