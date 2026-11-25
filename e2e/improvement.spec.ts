@@ -89,3 +89,49 @@ test("a handler approves the improver's proposal on the page, and a handler with
     page.getByRole("button", { name: "Start a round" }),
   ).toBeDisabled();
 });
+
+test("the Improvement page doesn't move while it refreshes", async ({
+  page,
+  request,
+}) => {
+  const created = await request.post("/api/rounds/create", {
+    data: { started_by: "HND-01" },
+  });
+  const { round_id: roundId, stretch_id: stretchId } =
+    (await created.json()) as {
+      round_id: string;
+      stretch_id: string;
+    };
+  await request.post(`/api/rounds/${roundId}/change-proposals`, {
+    data: {
+      instructions: "Be brief.",
+      model: "openai/gpt-6-luna",
+      reasoning_effort: "medium",
+      reason: "Shorter answers are cheaper.",
+    },
+  });
+  await request.post(`/api/runs/${stretchId}/finish`, {
+    data: { status: "finished" },
+  });
+
+  await signIn(page);
+  await page.goto("/#/improvement");
+  await expect(
+    page.getByRole("region", { name: "Proposed change waiting for a handler" }),
+  ).toBeVisible();
+  const heights = () =>
+    page.evaluate(() =>
+      [".page-header", "main > .panel"].map((selector) =>
+        [...document.querySelectorAll(selector)].map((element) =>
+          Math.round(element.getBoundingClientRect().height),
+        ),
+      ),
+    );
+  const before = await heights();
+  let polls = 0;
+  page.on("response", (response) => {
+    if (response.url().endsWith("/api/rounds")) polls += 1;
+  });
+  await expect.poll(() => polls, { timeout: 15000 }).toBeGreaterThanOrEqual(2);
+  expect(await heights()).toEqual(before);
+});

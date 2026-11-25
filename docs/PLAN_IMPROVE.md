@@ -218,7 +218,7 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 
 - [x] vitest: every page renders the shared header (the Queue's is tested; the others use the same component), the navigation marks the current page, numbers are right-aligned (the Queue's claimed amounts are class-tested), and loading and error states say what to do next
 - [x] vitest: starting a dispatch, an evaluation and a sign-off each open the confirmation before calling the backend (Cancel is tested for the first two)
-- [ ] e2e: the existing specs still pass unchanged in what they do (only the confirmation clicks are added), and the pages refresh without their layout moving (the heights of the header and the main panels are the same before and after a refresh) (the specs pass with the confirmation clicks added, apart from one sign-in spec that failed once in the full run and passed alone; the layout-stability check is not written yet)
+- [x] e2e: the existing specs still pass unchanged in what they do (only the confirmation clicks are added), and the pages refresh without their layout moving (the heights of the header and the main panels are the same before and after a refresh) (the specs pass with the confirmation clicks added, apart from one sign-in spec that failed once in the full run and passed alone; the layout-stability check is not written yet)
 - [x] Playwright MCP: every page in light and dark mode, at a laptop width and at phone width, with no horizontal page scroll, checked against `docs/BRAND.md` and point 8 of the brief (left for Phase 7)
 - [ ] `npm run check` passes with `.env` moved out of the way (left for Phase 7)
 
