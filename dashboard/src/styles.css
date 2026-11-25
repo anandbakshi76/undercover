@@ -427,6 +427,8 @@ td .mono,
 }
 
 .steps {
+  max-height: 560px;
+  overflow-y: auto;
   display: grid;
   gap: 8px;
   list-style: none;
@@ -965,4 +967,27 @@ main > .panel {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+tbody tr:nth-child(odd) td:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+tbody tr:nth-child(odd) td:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+@media (max-width: 640px) {
+  .top {
+    align-items: flex-start;
+  }
+
+  .top nav {
+    width: 100%;
+  }
 }

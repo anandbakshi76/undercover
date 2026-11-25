@@ -72,7 +72,10 @@ export function EvaluationPage({ runId }: Readonly<{ runId: string }>) {
   const measures: [string, string][] = [
     ["Decision accuracy", percent(data.decision_accuracy)],
     ["Accuracy", percent(data.accuracy)],
-    ["Grade", gradeText(data.grade)],
+    [
+      "Grade",
+      data.grade === null ? gradeText(null) : `${gradeText(data.grade)} of 3`,
+    ],
     ["Cost of mistakes", money(data.cost_of_mistakes)],
     ["Straight through", percent(data.straight_through)],
     ["Cost per claim", cost(data.cost_per_claim)],

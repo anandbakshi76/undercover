@@ -172,7 +172,9 @@ function SettingForm({
                   setDraft({ ...draft, [field.path]: event.target.value });
                 }}
               />
-              <span className="unit">{field.unit}</span>
+              <span className="unit">
+                {group.money ? `$ · ${field.unit}` : field.unit}
+              </span>
             </div>
           );
         })}

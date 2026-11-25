@@ -334,7 +334,7 @@ it("shows each claim's grade with its two checks as yes or no", async () => {
   });
   render(<EvaluationPage runId="EVAL-0001" />);
   const measures = await screen.findByLabelText("Measures");
-  expect(within(measures).getByText("1.40")).toBeDefined();
+  expect(within(measures).getByText("1.40 of 3")).toBeDefined();
   expect(within(measures).getByText("$0.0112")).toBeDefined();
   const rows = within(
     screen.getByRole("table", { name: "Evaluation claims" }),
