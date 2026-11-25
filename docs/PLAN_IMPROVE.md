@@ -203,8 +203,8 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 - [x] vitest: Start and Stop need a confirmation; a handler who can't sign off over the limit sees what they can't do and why, and the backend's refusal shows if it comes
 - [x] vitest: the rounds list shows each round's recipe version, settings, version tried, reason, scores before and after, verdict, approvals and cost; the chart plots one point for each version tried; the diff view works for a version and a recipe
 - [x] e2e: a handler signs in, a round played out through the API (a proposal made, approved through the dialog, a verdict) shows its stages, the diff, the verdict and the cost on the page, and a second handler without the right sees the explanation and no buttons (not done yet: left for Phase 7)
-- [ ] Playwright MCP, against the stand-ins: the page in each state (waiting for approval, evaluating, finished, stopped, empty) in light and dark mode, with no horizontal scroll at laptop width (not done yet: left for Phase 7)
-- [ ] `npm run check` passes with `.env` moved out of the way (not done yet: left for Phase 7)
+- [x] Playwright MCP, against the stand-ins: the page in each state (waiting for approval, evaluating, finished, stopped, empty) in light and dark mode, with no horizontal scroll at laptop width (not done yet: left for Phase 7) (checked live: waiting, evaluating, finished and stopped in dark mode; the empty state by a unit test)
+- [x] `npm run check` passes with `.env` moved out of the way
 
 ## Phase 6: The look of the whole dashboard
 
@@ -220,7 +220,7 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 - [x] vitest: starting a dispatch, an evaluation and a sign-off each open the confirmation before calling the backend (Cancel is tested for the first two)
 - [x] e2e: the existing specs still pass unchanged in what they do (only the confirmation clicks are added), and the pages refresh without their layout moving (the heights of the header and the main panels are the same before and after a refresh) (the specs pass with the confirmation clicks added, apart from one sign-in spec that failed once in the full run and passed alone; the layout-stability check is not written yet)
 - [x] Playwright MCP: every page in light and dark mode, at a laptop width and at phone width, with no horizontal page scroll, checked against `docs/BRAND.md` and point 8 of the brief (left for Phase 7)
-- [ ] `npm run check` passes with `.env` moved out of the way (left for Phase 7)
+- [x] `npm run check` passes with `.env` moved out of the way
 
 ## Phase 7: Live runs and the handover
 
@@ -242,4 +242,4 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 - [x] live step 3: screenshots of every page in light and dark mode, one fresh subagent review, and what it found fixed (or noted, with a reason, in `docs/STATUS.md`)
 - [x] live step 4: the live checks' spend is reported and is under $1
 - [x] `docs/SPEC.md`, `docs/TECH_STACK.md`, `docs/PROCESS.md`, `docs/CODE_STANDARDS.md`, `docs/STATUS.md` and `data/README.md` describe the product as it now is
-- [ ] `npm run check` passes with `.env` moved out of the way: ruff, pyright, pytest at 80% or more, Prettier, ESLint, tsc, vitest at 80% or more, and Playwright
+- [x] `npm run check` passes with `.env` moved out of the way: ruff, pyright, pytest at 80% or more, Prettier, ESLint, tsc, vitest at 80% or more, and Playwright
