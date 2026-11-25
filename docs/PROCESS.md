@@ -40,4 +40,5 @@ When the last phase is done, run `npm run check` and report the results.
 - Never push.
 - Don't open `data/evals/` unless you're asked to.
 - Everything must work on Windows: write `package.json` scripts as `uv run` commands or `.mjs` files.
+- Live runs of the improver spend real money: read the OpenRouter key's credit limit and usage before and after, keep the round's spending limit in place, and report what the runs cost.
 - For live runs with the real model, reseed once first, then keep to the runs in the plan. Dispatches and evaluations are worked N claims at once, so the five-claim cap of the earlier builds is gone.
