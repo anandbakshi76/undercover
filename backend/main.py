@@ -12,7 +12,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import Connection, RowMapping, func, insert, select, update
 
-from backend import agent_service, db, documents, payout, scoring
+from backend import agent_service, auth, db, documents, payout, scoring
 from backend.db import (
     claims,
     eval_claims,
@@ -228,6 +228,12 @@ def get_instructions() -> dict[str, str]:
     return {"claim": (INSTRUCTIONS / "claim.md").read_text(encoding="utf-8")}
 
 
+@app.get("/api/me", operation_id="get_me")
+def get_me(handler: auth.SignedIn) -> dict[str, Any]:
+    """Get the signed-in handler."""
+    return handler
+
+
 @app.get("/api/handlers", operation_id="list_handlers")
 def list_handlers() -> list[dict[str, Any]]:
     """List the claims handlers."""
@@ -267,10 +273,6 @@ class WorkTime(BaseModel):
 
 class Payment(BaseModel):
     amount: float = Field(gt=0)
-
-
-class SignOff(BaseModel):
-    handler_id: str
 
 
 def now() -> str:
@@ -429,13 +431,14 @@ def pay_claim(claim_id: str, payment: Payment) -> dict[str, Any]:
 
 @app.post("/api/claims/{claim_id}/sign-off", operation_id="sign_off")
 def sign_off(
-    claim_id: str, sign_off: SignOff, background: BackgroundTasks
+    claim_id: str, background: BackgroundTasks, handler: auth.SignedIn
 ) -> dict[str, Any]:
-    """Sign off an approval over the limit as a handler, so the agent can pay it."""
+    """Sign off an approval over the limit as the signed-in handler."""
+    if not handler["can_approve_over_limit"]:
+        raise HTTPException(
+            403, f"{handler['name']} can't sign off a payout over the limit."
+        )
     with db.connect() as connection:
-        handler = record(connection, "handler", sign_off.handler_id)
-        if not handler["can_approve_over_limit"]:
-            raise HTTPException(403, f"{handler['name']} cannot sign off this claim.")
         row = claim_row(connection, claim_id)
         if row["evaluation_id"] is not None:
             raise HTTPException(
@@ -448,7 +451,7 @@ def sign_off(
             .where(claims.c.claim_id == claim_id)
             .values(
                 status="in_progress",
-                signed_off_by=sign_off.handler_id,
+                signed_off_by=handler["handler_id"],
                 signed_off_at=now(),
             )
         )
@@ -860,7 +863,11 @@ def get_evaluation(run_id: str) -> dict[str, Any]:
         return evaluation_view(connection, run_id, True)
 
 
-@app.post("/api/evaluations", operation_id="start_evaluation")
+@app.post(
+    "/api/evaluations",
+    operation_id="start_evaluation",
+    dependencies=[auth.SIGNED_IN],
+)
 def start_evaluation(evaluation: EvaluationStart) -> dict[str, Any]:
     """Ask the agent's service to start an evaluation of a labelled set."""
     return agent_service.forward("/api/evaluations", evaluation.model_dump())
@@ -895,7 +902,11 @@ def get_latest_dispatch() -> dict[str, Any] | None:
         return run_view(connection, run_id) if run_id else None
 
 
-@app.post("/api/dispatches", operation_id="start_dispatch")
+@app.post(
+    "/api/dispatches",
+    operation_id="start_dispatch",
+    dependencies=[auth.SIGNED_IN],
+)
 def start_dispatch(dispatch: DispatchStart) -> dict[str, Any]:
     """Ask the agent's service to start a dispatch with N claim agents at once."""
     return agent_service.forward(

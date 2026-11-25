@@ -1,9 +1,11 @@
+import { useAuth } from "./authContext";
 import { ClaimPage } from "./ClaimPage";
 import { EvaluationPage } from "./EvaluationPage";
 import { type Route, useRoute, useTheme } from "./hooks";
 import { Instructions } from "./Instructions";
 import { Queue } from "./Queue";
 import { Scoreboard } from "./Scoreboard";
+import { SignIn } from "./SignIn";
 
 function Page({ route }: Readonly<{ route: Route }>) {
   switch (route.page) {
@@ -23,6 +25,10 @@ function Page({ route }: Readonly<{ route: Route }>) {
 export function App() {
   const route = useRoute();
   const { theme, toggle } = useTheme();
+  const { state, signOut } = useAuth();
+  if (state.status === "loading") return <p className="loading">Loading...</p>;
+  if (state.status === "signed-out") return <SignIn message={state.message} />;
+  const { handler } = state;
   return (
     <div className="app">
       <header className="top">
@@ -52,6 +58,10 @@ export function App() {
           >
             Agent instructions
           </a>
+          <span className="who">
+            <strong>{handler.name}</strong>
+            <span className="note">{handler.role}</span>
+          </span>
           <button
             type="button"
             className="theme-toggle"
@@ -59,6 +69,15 @@ export function App() {
             onClick={toggle}
           >
             Dark mode
+          </button>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={() => {
+              void signOut();
+            }}
+          >
+            Sign out
           </button>
         </nav>
       </header>

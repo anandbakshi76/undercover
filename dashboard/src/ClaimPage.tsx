@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import {
   api,
   type ClaimDetail,
@@ -6,6 +6,7 @@ import {
   type Policy,
   type Step,
 } from "./api";
+import { useAuth } from "./authContext";
 import { Badge } from "./Badge";
 import { DECISION_LABELS, dateTime, money, words } from "./format";
 import { useAction, useLoad } from "./hooks";
@@ -117,44 +118,35 @@ function PolicyFacts({ policy }: Readonly<{ policy: Policy }>) {
 
 function SignOffForm({
   claimId,
-  handlers,
   onSignedOff,
-}: Readonly<{
-  claimId: string;
-  handlers: Handler[];
-  onSignedOff: () => void;
-}>) {
-  const [handlerId, setHandlerId] = useState("");
+}: Readonly<{ claimId: string; onSignedOff: () => void }>) {
+  const { state } = useAuth();
   const action = useAction();
-  const eligible = handlers.filter((handler) => handler.can_approve_over_limit);
-
+  if (state.status !== "signed-in") return null;
+  const { handler } = state;
+  if (!handler.can_approve_over_limit) {
+    return (
+      <p className="note sign-off-refused">
+        {handler.name} can&apos;t sign off this payout. Only a handler who can
+        sign off payouts over the limit may.
+      </p>
+    );
+  }
   return (
     <form
       className="sign-off"
       onSubmit={(event) => {
         event.preventDefault();
         void action.act(async () => {
-          await api.signOff(claimId, handlerId);
+          await api.signOff(claimId);
           onSignedOff();
         });
       }}
     >
-      <label htmlFor="handler">Handler</label>
-      <select
-        id="handler"
-        value={handlerId}
-        onChange={(event) => {
-          setHandlerId(event.target.value);
-        }}
-      >
-        <option value="">Choose a handler</option>
-        {eligible.map((handler) => (
-          <option key={handler.handler_id} value={handler.handler_id}>
-            {handler.name}
-          </option>
-        ))}
-      </select>
-      <button type="submit" disabled={!handlerId || action.busy}>
+      <p className="note">
+        You are signing off as <strong>{handler.name}</strong>.
+      </p>
+      <button type="submit" disabled={action.busy}>
         Sign off
       </button>
       {action.error && <p role="alert">{action.error}</p>}
@@ -256,11 +248,7 @@ function DecisionPanel({
       <p className="note">Based on: {decision.policy_section}</p>
       <Payment claim={claim} handlers={handlers} />
       {claim.status === "awaiting_sign_off" && !claim.evaluation_id && (
-        <SignOffForm
-          claimId={claim.claim_id}
-          handlers={handlers}
-          onSignedOff={onChange}
-        />
+        <SignOffForm claimId={claim.claim_id} onSignedOff={onChange} />
       )}
     </section>
   );

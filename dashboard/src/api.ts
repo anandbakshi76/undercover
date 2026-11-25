@@ -175,6 +175,7 @@ export interface Handler {
   handler_id: string;
   name: string;
   role: string;
+  email: string;
   can_approve_over_limit: boolean;
 }
 
@@ -190,9 +191,23 @@ function detail(body: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
+let accessToken: string | null = null;
+let whenUnauthorized: () => void = () => undefined;
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+}
+
+export function setUnauthorizedHandler(handler: () => void): void {
+  whenUnauthorized = handler;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init);
+  const headers = new Headers(init?.headers);
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  const response = await fetch(path, { ...init, headers });
   const body: unknown = await response.json();
+  if (response.status === 401 && accessToken) whenUnauthorized();
   if (!response.ok) throw new Error(detail(body));
   return body as T;
 }
@@ -212,6 +227,7 @@ export const api = {
   steps: (claimId: string) => request<Step[]>(`/api/claims/${claimId}/steps`),
   instructions: () => request<Instructions>("/api/instructions"),
   latestDispatch: () => request<Run | null>("/api/dispatches/latest"),
+  me: () => request<Handler>("/api/me"),
   handlers: () => request<Handler[]>("/api/handlers"),
   evaluations: () => request<Evaluation[]>("/api/evaluations"),
   evaluation: (runId: string) =>
@@ -230,8 +246,6 @@ export const api = {
     post<Run>("/api/dispatches", { concurrency }),
   runAgent: (claimId: string) =>
     post<{ status: string }>(`/api/claims/${claimId}/run`),
-  signOff: (claimId: string, handlerId: string) =>
-    post<ClaimDetail>(`/api/claims/${claimId}/sign-off`, {
-      handler_id: handlerId,
-    }),
+  signOff: (claimId: string) =>
+    post<ClaimDetail>(`/api/claims/${claimId}/sign-off`),
 };

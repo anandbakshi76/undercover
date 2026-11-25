@@ -59,9 +59,7 @@ def test_a_copy_held_for_sign_off_counts_as_finished_and_its_progress_is_cleared
     assert checkpoints.memory().get_tuple(config) is None
     texts = [step["text"] for step in recorded_steps(held)]
     assert "Held for a sign-off. An evaluation copy counts as finished." in texts
-    refused = main.call(
-        "POST", f"/api/claims/{held}/sign-off", {"handler_id": "HND-01"}
-    )
+    refused = main.call("POST", f"/api/claims/{held}/sign-off")
     assert "evaluation copy" in refused["detail"]
     main.call("POST", f"/api/runs/{run['run_id']}/finish", {"status": "finished"})
     shown = main.call("GET", f"/api/evaluations/{run['run_id']}")

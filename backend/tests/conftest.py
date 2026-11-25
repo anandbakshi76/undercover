@@ -4,8 +4,9 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from backend import agent_service
+from backend import agent_service, auth
 from backend.main import app
+from backend.tests import sign_in
 
 
 class StandIn:
@@ -42,7 +43,20 @@ def agent(monkeypatch):
     return stand_in
 
 
+@pytest.fixture(autouse=True)
+def public_keys(monkeypatch):
+    monkeypatch.setattr(auth, "keys", sign_in.StubKeys)
+
+
 @pytest.fixture
 def client():
+    """A client signed in as Dana Whitfield, the senior handler."""
+    with TestClient(app, headers=sign_in.bearer("dana")) as client:
+        yield client
+
+
+@pytest.fixture
+def anonymous():
+    """A client that has not signed in."""
     with TestClient(app) as client:
         yield client

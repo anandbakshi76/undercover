@@ -5,8 +5,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent import checkpoints, main
-from backend import agent_service, db
+from backend import agent_service, auth, db
 from backend.main import app
+from backend.tests import sign_in
 
 
 def refuse(request):
@@ -17,7 +18,8 @@ def refuse(request):
 def fresh_backend(tmp_path, monkeypatch):
     monkeypatch.setenv("UNDERCOVER_DB", str(tmp_path / "test.db"))
     db.init()
-    client = TestClient(app)
+    monkeypatch.setattr(auth, "keys", sign_in.StubKeys)
+    client = TestClient(app, headers=sign_in.bearer("dana"))
     monkeypatch.setattr(main, "backend", lambda: nullcontext(client))
     monkeypatch.setattr(main, "RETRY_DELAY", 0)
     down = httpx.Client(base_url="http://agent", transport=httpx.MockTransport(refuse))

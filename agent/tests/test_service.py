@@ -19,8 +19,6 @@ from agent.tests.stubs import (
 )
 from backend import agent_service
 
-SIGN_OFF = {"handler_id": "HND-01"}
-
 
 @pytest.fixture
 def service_client():
@@ -40,7 +38,7 @@ def hold(claim_id="CLM-1002", saver=None):
 
 
 def sign_off(claim_id="CLM-1002"):
-    return main.call("POST", f"/api/claims/{claim_id}/sign-off", SIGN_OFF)
+    return main.call("POST", f"/api/claims/{claim_id}/sign-off")
 
 
 def payments(claim_id):

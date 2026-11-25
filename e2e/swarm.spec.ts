@@ -1,4 +1,5 @@
 import { expect, type APIRequestContext, test } from "@playwright/test";
+import { signIn } from "./sign-in";
 
 interface Sent {
   path: string;
@@ -25,6 +26,10 @@ async function approve(
     },
   });
 }
+
+test.beforeEach(async ({ page }) => {
+  await signIn(page);
+});
 
 test("starting a dispatch on the dashboard reaches the agent's service with N", async ({
   page,

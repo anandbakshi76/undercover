@@ -1,6 +1,6 @@
 import pytest
 
-from backend import main
+from backend.tests import sign_in
 
 
 def decide(client, claim_id, decision="approve", payout=420.0):
@@ -19,10 +19,8 @@ def pay(client, claim_id, amount):
     return client.post(f"/api/claims/{claim_id}/payment", json={"amount": amount})
 
 
-def sign_off(client, claim_id, handler_id="HND-01"):
-    return client.post(
-        f"/api/claims/{claim_id}/sign-off", json={"handler_id": handler_id}
-    )
+def sign_off(client, claim_id, who="dana"):
+    return client.post(f"/api/claims/{claim_id}/sign-off", headers=sign_in.bearer(who))
 
 
 def test_approval_within_the_limit_is_in_progress_until_it_is_paid(client):
@@ -117,23 +115,24 @@ def test_a_different_payment_is_refused(client):
     assert response.json()["detail"] == "This claim has already been paid."
 
 
-def test_sign_off_needs_a_known_handler(client):
+def test_sign_off_needs_a_signed_in_handler(client, anonymous):
     decide(client, "CLM-1002", payout=1250.0)
-    assert sign_off(client, "CLM-1002", "HND-99").status_code == 404
+    path = "/api/claims/CLM-1002/sign-off"
+    assert anonymous.post(path).status_code == 401
+    assert sign_off(client, "CLM-1002", "nobody@example.com").status_code == 401
+    assert client.get("/api/claims/CLM-1002").json()["sign_off"] is None
 
 
-def test_sign_off_needs_a_handler_who_can_approve(client, monkeypatch):
-    record = main.record
-
-    def without_authority(connection, kind, record_id):
-        found = record(connection, kind, record_id)
-        if kind == "handler":
-            found["can_approve_over_limit"] = False
-        return found
-
-    monkeypatch.setattr(main, "record", without_authority)
+def test_sign_off_needs_a_handler_who_can_approve(client):
     decide(client, "CLM-1002", payout=1250.0)
-    assert sign_off(client, "CLM-1002").status_code == 403
+    refused = sign_off(client, "CLM-1002", "marcus")
+    assert refused.status_code == 403
+    assert refused.json()["detail"] == (
+        "Marcus Oyelaran can't sign off a payout over the limit."
+    )
+    claim = client.get("/api/claims/CLM-1002").json()
+    assert claim["status"] == "awaiting_sign_off"
+    assert claim["sign_off"] is None
 
 
 def test_sign_off_needs_a_claim_waiting_for_it(client):

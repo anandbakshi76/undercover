@@ -171,7 +171,7 @@ def test_a_copy_cannot_be_signed_off_or_run_from_the_claim_page(client):
     start(client, run["run_id"], copy)
     decide(client, copy, "approve", 1250)
     assert client.get(f"/api/claims/{copy}").json()["status"] == "awaiting_sign_off"
-    refused = client.post(f"/api/claims/{copy}/sign-off", json={"handler_id": "HND-01"})
+    refused = client.post(f"/api/claims/{copy}/sign-off")
     assert refused.status_code == 409
     assert "evaluation copy" in refused.json()["detail"]
     assert client.get(f"/api/claims/{copy}").json()["sign_off"] is None

@@ -47,10 +47,8 @@ def graph_state(claim_id, saver):
     return graph.get_state({"configurable": {"thread_id": thread_id}})
 
 
-def sign_off(claim_id, handler_id="HND-01"):
-    return main.call(
-        "POST", f"/api/claims/{claim_id}/sign-off", {"handler_id": handler_id}
-    )
+def sign_off(claim_id):
+    return main.call("POST", f"/api/claims/{claim_id}/sign-off")
 
 
 def test_tools_call_the_backend():

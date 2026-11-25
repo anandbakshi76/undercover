@@ -1,4 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { signIn } from "./sign-in";
+
+test.beforeEach(async ({ page }) => {
+  await signIn(page);
+});
 
 test("the queue shows every claim and opens one", async ({ page }) => {
   await page.goto("/");
@@ -74,7 +79,6 @@ test("a sign-off puts the claim back in progress and tells the agent", async ({
   await expect(
     page.getByText("The payment waits for a handler's sign-off."),
   ).toBeVisible();
-  await page.getByLabel("Handler").selectOption("HND-01");
   await page.getByRole("button", { name: "Sign off", exact: true }).click();
   await expect(page.locator(".actions .badge")).toHaveText("In progress");
   await expect(

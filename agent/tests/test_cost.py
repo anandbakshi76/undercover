@@ -73,7 +73,7 @@ def test_the_wait_for_a_sign_off_is_not_counted():
     begun = time.monotonic()
     claim_agent.work_claim("CLM-1002", new_run(1), model, saver)
     time.sleep(0.5)
-    main.call("POST", "/api/claims/CLM-1002/sign-off", {"handler_id": "HND-01"})
+    main.call("POST", "/api/claims/CLM-1002/sign-off")
     claim_agent.carry_on("CLM-1002", stub(), saver)
     elapsed = time.monotonic() - begun
     first, second = stretches("CLM-1002")

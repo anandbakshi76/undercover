@@ -2,13 +2,13 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   within,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Decision } from "./api";
 import { ClaimPage } from "./ClaimPage";
+import { renderSignedIn } from "./signedIn";
 import { dateTime } from "./format";
 import { POLL_MS } from "./hooks";
 import {
@@ -16,6 +16,7 @@ import {
   claim,
   Failure,
   handlers,
+  marcus,
   mockApi,
   policy,
   Replies,
@@ -50,7 +51,7 @@ it("shows a waiting claim in full and runs the agent", async () => {
   const fetchMock = mockApi(
     routes({ "POST /api/claims/CLM-1001/run": { status: "in_progress" } }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   expect(
     await screen.findByText("My flight home from Rome was canceled."),
   ).toBeDefined();
@@ -76,7 +77,7 @@ it("shows the agent's steps as they arrive", async () => {
       ]),
     }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   const list = await screen.findByRole("list", { name: "Agent steps" });
   expect(within(list).getAllByRole("listitem")).toHaveLength(1);
   await act(() => vi.advanceTimersByTimeAsync(POLL_MS));
@@ -103,7 +104,7 @@ it("shows a decided claim with its decision", async () => {
       ],
     }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   expect(await screen.findByText("Declined")).toBeDefined();
   expect(screen.getByText("$0.00")).toBeDefined();
   expect(screen.getByText("Lost through being left unattended.")).toBeDefined();
@@ -146,23 +147,21 @@ it("signs off a payout over the limit and follows it until it is paid", async ()
       "POST /api/claims/CLM-1001/sign-off": claim(),
     }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   expect(
     await screen.findByText("The payment waits for a handler's sign-off."),
   ).toBeDefined();
-  const submit = screen.getByRole("button", { name: "Sign off" });
-  expect(submit.hasAttribute("disabled")).toBe(true);
-  fireEvent.change(await screen.findByLabelText("Handler"), {
-    target: { value: "HND-01" },
-  });
-  fireEvent.click(submit);
+  expect(
+    screen.getByText("Dana Whitfield", { selector: "strong" }),
+  ).toBeDefined();
+  fireEvent.click(screen.getByRole("button", { name: "Sign off" }));
   expect(
     await screen.findByText(
       `Payment pending, signed off by Dana Whitfield at ${dateTime(SIGNED_OFF.signed_off_at)}`,
     ),
   ).toBeDefined();
   expect(screen.getByText("In progress")).toBeDefined();
-  expect(screen.queryByRole("combobox")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Sign off" })).toBeNull();
   await act(() => vi.advanceTimersByTimeAsync(POLL_MS));
   expect(
     await screen.findByText(
@@ -189,12 +188,8 @@ it("shows the backend's message when sign-off fails", async () => {
       ),
     }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
-  await screen.findByRole("option", { name: "Dana Whitfield" });
-  fireEvent.change(screen.getByLabelText("Handler"), {
-    target: { value: "HND-01" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Sign off" }));
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Sign off" }));
   expect((await screen.findByRole("alert")).textContent).toBe(
     "Claim CLM-1001 is not waiting for sign-off.",
   );
@@ -209,7 +204,7 @@ it("shows an approval that has not been paid", async () => {
       }),
     }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   expect(await screen.findByText("Payment pending")).toBeDefined();
 });
 
@@ -222,7 +217,7 @@ it("shows an error when the claim cannot load", async () => {
       ),
     }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   expect((await screen.findByRole("alert")).textContent).toBe(
     "There is no claim CLM-1001.",
   );
@@ -249,7 +244,7 @@ it("keeps refreshing while the claim is in progress and stops once it is paid", 
       ]),
     }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   expect(await screen.findByText("Working...")).toBeDefined();
   expect(screen.getByText("Payment pending")).toBeDefined();
   await act(() => vi.advanceTimersByTimeAsync(POLL_MS));
@@ -269,7 +264,7 @@ it("shows a Run agent error, such as the agent not running", async () => {
       ),
     }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   fireEvent.click(await screen.findByRole("button", { name: "Run agent" }));
   expect((await screen.findByRole("alert")).textContent).toBe(
     "The agent isn't running.",
@@ -290,7 +285,7 @@ it("lists the sections the agent read, once each and in order", async () => {
       ],
     }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   const read = await screen.findByRole("list", { name: "Sections read" });
   expect(
     within(read)
@@ -306,7 +301,7 @@ it("lists the sections the agent read, once each and in order", async () => {
 
 it("says when the agent has read nothing yet", async () => {
   mockApi(routes());
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   expect(
     await screen.findByText("The agent has not read any sections yet."),
   ).toBeDefined();
@@ -321,7 +316,7 @@ it("shows a claim left for a handler, with no Run agent button", async () => {
       }),
     }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   expect(
     await screen.findByText(
       "The agent could not decide this claim after two attempts. It is left for a handler.",
@@ -343,7 +338,7 @@ it("shows an evaluation copy with a note, a way back, and no sign-off form or Ru
       }),
     }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   expect(await screen.findByText(/worked for an evaluation/)).toBeDefined();
   expect(
     screen
@@ -363,7 +358,25 @@ it("shows no Run agent button on a waiting evaluation copy", async () => {
       }),
     }),
   );
-  render(<ClaimPage claimId="CLM-1001" />);
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   await screen.findByText(/worked for an evaluation/);
   expect(screen.queryByRole("button", { name: "Run agent" })).toBeNull();
+});
+
+it("tells a handler who can't sign off why, with no button", async () => {
+  mockApi(
+    routes({
+      "GET /api/claims/CLM-1001": claim({
+        status: "awaiting_sign_off",
+        decision: approval,
+      }),
+    }),
+  );
+  renderSignedIn(<ClaimPage claimId="CLM-1001" />, marcus);
+  expect(
+    await screen.findByText(
+      "Marcus Oyelaran can't sign off this payout. Only a handler who can sign off payouts over the limit may.",
+    ),
+  ).toBeDefined();
+  expect(screen.queryByRole("button", { name: "Sign off" })).toBeNull();
 });

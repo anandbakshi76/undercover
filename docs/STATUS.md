@@ -2,6 +2,10 @@
 
 The claims pilot from `docs/SPEC.md` is built, following `docs/PLAN.md`. The harness from `docs/HARNESS.md` is built on top of it (`docs/PLAN_HARNESS.md`), durable state from `docs/DURABLE.md` on top of that (`docs/PLAN_DURABLE.md`), and the swarm and scoreboard from `docs/SWARM.md` on top of that (`docs/PLAN_SWARM.md`, all six phases done). The swarm build changed the schema, so a database from durable state needs `npm run seed` once.
 
+## Improve build in progress
+
+`docs/PLAN_IMPROVE.md` is being built phase by phase; the sections below describe the product as of the swarm build until the last phase rewrites them. Done so far: handlers sign in. The dashboard signs in with `@supabase/supabase-js` (`dashboard/src/supabase.ts` is the only place that reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`), shows the signed-in handler in the header with Sign out, and sends the access token with every request. The backend (`backend/auth.py`) checks the token against the project's public keys (`/auth/v1/.well-known/jwks.json`, audience `authenticated`) and finds the handler by email. `start_dispatch`, `start_evaluation` and `sign_off` need a signed-in handler, `sign_off` records the signed-in handler and refuses one who can't sign off over the limit, and `get_me` says who is signed in. Only Dana Whitfield can sign off over the limit now (`data/handlers.json`). The service's own writes and the claim agent's calls stay open until Week 3. The end-to-end tests use a stand-in for Supabase Auth (`e2e/auth-stand-in.js`, port 8004, password `e2e-password`).
+
 ## What's built
 
 - `backend/`: FastAPI and SQLAlchemy Core. With `DATABASE_URL` in its environment it uses the `undercover` schema on Supabase (at most 4 connections, waiting up to five minutes for one); without it, SQLite (`backend/undercover.db`, or the file in `UNDERCOVER_DB`), which the tests use. Both are seeded from `data/` on first start. The answer key (`data/evals/`) goes into tables of its own and never into the queue.

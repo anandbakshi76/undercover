@@ -1,13 +1,8 @@
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { parseRoute, THEME_KEY } from "./hooks";
+import { renderSignedIn } from "./signedIn";
 import { claim, evaluationDetail, mockApi, policy, summary } from "./testing";
 
 afterEach(() => {
@@ -42,7 +37,7 @@ describe("App", () => {
       "GET /api/claims": [summary()],
       "GET /api/dispatches/latest": null,
     });
-    render(<App />);
+    renderSignedIn(<App />);
     expect(
       await screen.findByRole("heading", { name: "Claims queue" }),
     ).toBeDefined();
@@ -54,7 +49,7 @@ describe("App", () => {
       "GET /api/evaluations/EVAL-0001": evaluationDetail(),
     });
     window.location.hash = "#/scoreboard";
-    render(<App />);
+    renderSignedIn(<App />);
     expect(
       await screen.findByRole("heading", { name: "Scoreboard" }),
     ).toBeDefined();
@@ -77,7 +72,7 @@ describe("App", () => {
       },
     });
     window.location.hash = "#/instructions";
-    render(<App />);
+    renderSignedIn(<App />);
     expect(await screen.findByText("Decide claims.")).toBeDefined();
   });
 
@@ -90,7 +85,7 @@ describe("App", () => {
       "GET /api/policies/POL-2001": policy,
       "GET /api/handlers": [],
     });
-    render(<App />);
+    renderSignedIn(<App />);
     await screen.findByRole("heading", { name: "Claims queue" });
     act(() => {
       window.location.hash = "#/claims/CLM-1001";
@@ -109,7 +104,7 @@ describe("dark mode", () => {
       "GET /api/dispatches/latest": null,
     });
     document.documentElement.dataset.theme = "dark";
-    render(<App />);
+    renderSignedIn(<App />);
     const toggle = await screen.findByRole("button", { name: "Dark mode" });
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
   });
@@ -119,7 +114,7 @@ describe("dark mode", () => {
       "GET /api/claims": [summary()],
       "GET /api/dispatches/latest": null,
     });
-    render(<App />);
+    renderSignedIn(<App />);
     const toggle = await screen.findByRole("button", { name: "Dark mode" });
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(toggle);

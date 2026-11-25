@@ -130,14 +130,23 @@ export const policy: Policy = {
   add_on_details: [{ add_on: "electronics_plus", name: "Electronics Plus" }],
 };
 
-export const handlers: Handler[] = [
-  {
-    handler_id: "HND-01",
-    name: "Dana Whitfield",
-    role: "Senior Claims Handler",
-    can_approve_over_limit: true,
-  },
-];
+export const dana: Handler = {
+  handler_id: "HND-01",
+  name: "Dana Whitfield",
+  role: "Senior Claims Handler",
+  email: "dana.whitfield@undercover.example",
+  can_approve_over_limit: true,
+};
+
+export const marcus: Handler = {
+  handler_id: "HND-02",
+  name: "Marcus Oyelaran",
+  role: "Claims Handler",
+  email: "marcus.oyelaran@undercover.example",
+  can_approve_over_limit: false,
+};
+
+export const handlers: Handler[] = [dana, marcus];
 
 export function step(id: number, overrides: Partial<Step> = {}): Step {
   return {
