@@ -82,12 +82,14 @@ def run_dispatch(
     dispatch: DispatchStart, background: BackgroundTasks
 ) -> dict[str, Any]:
     """Start a dispatch of the queue with N claim agents at once, and work it."""
-    model, effort = main.model_settings()
+    configuration = start("GET", "/api/configurations/current")
+    model, effort = main.model_settings(configuration)
     run = start(
         "POST",
         "/api/runs/dispatch",
         {
             "concurrency": dispatch.concurrency,
+            "version": configuration["version"],
             "model": model,
             "reasoning_effort": effort,
         },
@@ -101,11 +103,17 @@ def run_evaluation(
     evaluation: EvaluationStart, background: BackgroundTasks
 ) -> dict[str, Any]:
     """Start an evaluation of a labelled set with N claim agents, and work it."""
-    model, effort = main.model_settings()
+    configuration = start("GET", "/api/configurations/current")
+    model, effort = main.model_settings(configuration)
     run = start(
         "POST",
         "/api/runs/evaluation",
-        evaluation.model_dump() | {"model": model, "reasoning_effort": effort},
+        evaluation.model_dump()
+        | {
+            "version": configuration["version"],
+            "model": model,
+            "reasoning_effort": effort,
+        },
     )
     background.add_task(work_dispatch, run["run_id"], evaluation.concurrency)
     return run

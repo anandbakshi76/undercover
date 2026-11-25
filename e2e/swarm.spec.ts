@@ -56,13 +56,19 @@ test("the queue shows a dispatch played out through the API", async ({
   const created = await request.post("/api/runs/dispatch", {
     data: {
       concurrency: 3,
+      version: 1,
       model: "openai/gpt-6-luna",
       reasoning_effort: "low",
     },
   });
   const runId = ((await created.json()) as { run_id: string }).run_id;
   const refused = await request.post("/api/runs/dispatch", {
-    data: { concurrency: 3, model: "m", reasoning_effort: "low" },
+    data: {
+      concurrency: 3,
+      version: 1,
+      model: "m",
+      reasoning_effort: "low",
+    },
   });
   expect(refused.status()).toBe(409);
 
@@ -149,6 +155,7 @@ test("the scoreboard shows an evaluation played out through the API", async ({
   const created = await request.post("/api/runs/evaluation", {
     data: {
       concurrency: 5,
+      version: 1,
       evaluation_set: "held_out",
       tiny: true,
       model: "openai/gpt-6-luna",

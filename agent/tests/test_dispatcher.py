@@ -15,7 +15,7 @@ ERROR = RuntimeError("model unavailable")
 
 def work(monkeypatch, **options):
     model = ClaimStub(messages=iter([]), **options)
-    monkeypatch.setattr(main, "model", lambda: model)
+    monkeypatch.setattr(main, "model", lambda _config: model)
     return model
 
 

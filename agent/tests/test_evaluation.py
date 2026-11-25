@@ -13,6 +13,7 @@ def create(evaluation_set="held_out", tiny=True, concurrency=5):
         "concurrency": concurrency,
         "evaluation_set": evaluation_set,
         "tiny": tiny,
+        "version": 1,
         "model": "stub",
         "reasoning_effort": "low",
     }
@@ -25,7 +26,7 @@ def queue():
 
 def work(monkeypatch, **options):
     model = ClaimStub(messages=iter([]), **options)
-    monkeypatch.setattr(main, "model", lambda: model)
+    monkeypatch.setattr(main, "model", lambda _config: model)
     return model
 
 

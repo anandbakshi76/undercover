@@ -4,7 +4,6 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -12,22 +11,33 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import Connection, RowMapping, func, insert, select, update
 
-from backend import agent_service, auth, db, documents, payout, scoring
+from backend import (
+    agent_service,
+    auth,
+    db,
+    documents,
+    payout,
+    scoring,
+    settings,
+    versions,
+)
 from backend.db import (
     claims,
+    configurations,
     eval_claims,
     eval_decisions,
     model_calls,
+    platform_settings,
+    recipes,
     records,
     run_claims,
     runs,
+    setting_changes,
     steps,
     work_time,
 )
 
 Row = RowMapping
-
-INSTRUCTIONS = Path(__file__).resolve().parent / "instructions"
 
 
 @asynccontextmanager
@@ -145,8 +155,13 @@ def claim_totals(connection: Connection, claim_id: str) -> dict[str, float]:
 def get_claim(claim_id: str) -> dict[str, Any]:
     """Get one claim in full, with its decision, sign-off, payment, cost and time."""
     with db.connect() as connection:
-        view = claim_view(claim_row(connection, claim_id))
-        return view | claim_totals(connection, claim_id)
+        row = claim_row(connection, claim_id)
+        version = connection.execute(
+            select(runs.c.version).where(runs.c.run_id == row["run_id"])
+        ).scalar()
+        return (
+            claim_view(row) | claim_totals(connection, claim_id) | {"version": version}
+        )
 
 
 @app.get("/api/policies/{policy_id}", operation_id="get_policy")
@@ -222,12 +237,6 @@ def search_documents(text: str) -> list[dict[str, str]]:
         ]
 
 
-@app.get("/api/instructions", operation_id="get_instructions")
-def get_instructions() -> dict[str, str]:
-    """Get the claim agent's instructions."""
-    return {"claim": (INSTRUCTIONS / "claim.md").read_text(encoding="utf-8")}
-
-
 @app.get("/api/me", operation_id="get_me")
 def get_me(handler: auth.SignedIn) -> dict[str, Any]:
     """Get the signed-in handler."""
@@ -288,7 +297,7 @@ def money(amount: float) -> str:
 
 
 def approval_limit(connection: Connection) -> float:
-    return record(connection, "settings", "company")["payout_approval_limit"]
+    return float(settings.read(connection, "approval_limit"))
 
 
 def add_step_row(connection: Connection, claim_id: str, step: Step) -> None:
@@ -310,12 +319,11 @@ def pay(connection: Connection, row: Row, amount: float) -> None:
         raise HTTPException(
             409, f"The amount must equal the approved payout of {money(row['payout'])}."
         )
-    limit = approval_limit(connection)
-    if amount > limit and row["signed_off_by"] is None:
+    if row["sign_off_required"] and row["signed_off_by"] is None:
         raise HTTPException(
             409,
-            f"A payout over {money(limit)} needs a handler's sign-off "
-            "before it can be paid.",
+            f"A payout over {money(approval_limit(connection))} needs a handler's "
+            "sign-off before it can be paid.",
         )
     connection.execute(
         update(claims)
@@ -411,6 +419,7 @@ def record_decision(claim_id: str, decision: Decision) -> dict[str, Any]:
                     reason=decision.reason,
                     policy_section=decision.policy_section,
                     decided_at=now(),
+                    sign_off_required=int(over_limit),
                 )
             ).rowcount
             row = claim_row(connection, claim_id)
@@ -466,6 +475,7 @@ RUN_KINDS = ["dispatch", "evaluation"]
 
 class NewDispatch(BaseModel):
     concurrency: int = Field(ge=1, le=25)
+    version: int = Field(ge=1)
     model: str = Field(min_length=1)
     reasoning_effort: str = Field(min_length=1)
 
@@ -491,8 +501,13 @@ class NewEvaluation(BaseModel):
     concurrency: int = Field(ge=1, le=25)
     evaluation_set: EvaluationSet
     tiny: bool
+    version: int = Field(ge=1)
     model: str = Field(min_length=1)
     reasoning_effort: str = Field(min_length=1)
+
+
+class SettingChange(BaseModel):
+    value: Any
 
 
 class ClaimStart(BaseModel):
@@ -593,6 +608,7 @@ def run_view(connection: Connection, run_id: str) -> dict[str, Any]:
         "finished_at": row["finished_at"],
         "model": row["model"],
         "reasoning_effort": row["reasoning_effort"],
+        "version": row["version"],
         "evaluation_set": row["evaluation_set"],
         "tiny": None if row["tiny"] is None else bool(row["tiny"]),
         "claims_worked": [item["claim_id"] for item in worked],
@@ -609,10 +625,12 @@ def new_run(
     connection: Connection,
     kind: str,
     concurrency: int,
-    model: str = "",
-    reasoning_effort: str = "",
-    **evaluation: Any,
+    **options: Any,
 ) -> str:
+    """Start a run, with a version, a model and an effort, and any other columns."""
+    version = options.pop("version", None)
+    model = options.pop("model", "")
+    reasoning_effort = options.pop("reasoning_effort", "")
     if (
         kind in RUN_KINDS
         and connection.execute(
@@ -622,6 +640,10 @@ def new_run(
         ).first()
     ):
         raise HTTPException(409, "A dispatch or evaluation is already running.")
+    version = version or versions.current(connection)
+    config = versions.configuration(connection, version)
+    if config is None:
+        raise HTTPException(404, f"There is no version {version} of the configuration.")
     prefix = "EVAL" if kind == "evaluation" else "RUN"
     run_id = f"{prefix}-{uuid4().hex[:8]}"
     connection.execute(
@@ -631,9 +653,10 @@ def new_run(
             concurrency=concurrency,
             status="running",
             started_at=now_ms(),
-            model=model,
-            reasoning_effort=reasoning_effort,
-            **evaluation,
+            version=version,
+            model=model or config["model"],
+            reasoning_effort=reasoning_effort or config["reasoning_effort"],
+            **options,
         )
     )
     return run_id
@@ -738,8 +761,9 @@ def create_dispatch(new: NewDispatch) -> dict[str, Any]:
             connection,
             "dispatch",
             new.concurrency,
-            new.model,
-            new.reasoning_effort,
+            version=new.version,
+            model=new.model,
+            reasoning_effort=new.reasoning_effort,
         )
         return run_view(connection, run_id)
 
@@ -752,8 +776,9 @@ def create_evaluation(new: NewEvaluation) -> dict[str, Any]:
             connection,
             "evaluation",
             new.concurrency,
-            new.model,
-            new.reasoning_effort,
+            version=new.version,
+            model=new.model,
+            reasoning_effort=new.reasoning_effort,
             evaluation_set=new.evaluation_set,
             tiny=int(new.tiny),
         )
@@ -835,6 +860,7 @@ def evaluation_view(
         "concurrency": run["concurrency"],
         "model": run["model"],
         "reasoning_effort": run["reasoning_effort"],
+        "version": run["version"],
         "status": run["status"],
         "started_at": run["started_at"],
         "finished_at": run["finished_at"],
@@ -994,3 +1020,211 @@ def start_claim_run(claim_id: str) -> dict[str, str]:
 def run_agent(claim_id: str) -> dict[str, Any]:
     """Start the UnderCover Agent on one waiting claim."""
     return agent_service.forward(f"/api/claims/{claim_id}/run")
+
+
+def handler_name(connection: Connection, handler_id: str | None) -> str | None:
+    if handler_id is None:
+        return None
+    return record(connection, "handler", handler_id)["name"]
+
+
+def setting_view(connection: Connection, key: str) -> dict[str, Any]:
+    row = (
+        connection.execute(
+            select(platform_settings).where(platform_settings.c.key == key)
+        )
+        .mappings()
+        .one()
+    )
+    return {
+        "key": key,
+        "value": json.loads(row["value"]),
+        "changed_by": handler_name(connection, row["changed_by"]),
+        "changed_at": row["changed_at"],
+    }
+
+
+@app.get("/api/settings", operation_id="get_settings")
+def get_settings() -> list[dict[str, Any]]:
+    """Get the platform's settings, with who last changed each and when."""
+    with db.connect() as connection:
+        return [setting_view(connection, key) for key in settings.VALIDATORS]
+
+
+@app.get("/api/settings/changes", operation_id="list_setting_changes")
+def list_setting_changes() -> list[dict[str, Any]]:
+    """List every change to a setting, newest first."""
+    with db.connect() as connection:
+        rows = (
+            connection.execute(
+                select(setting_changes).order_by(setting_changes.c.id.desc())
+            )
+            .mappings()
+            .all()
+        )
+        return [
+            {
+                "key": row["key"],
+                "old": json.loads(row["old_value"]),
+                "new": json.loads(row["new_value"]),
+                "changed_by": handler_name(connection, row["changed_by"]),
+                "changed_at": row["changed_at"],
+            }
+            for row in rows
+        ]
+
+
+@app.put("/api/settings/{key}", operation_id="change_setting")
+def change_setting(
+    key: str, change: SettingChange, handler: auth.Senior
+) -> dict[str, Any]:
+    """Change one setting as a senior handler, recording who and when."""
+    value = settings.check(key, change.value)
+    with db.connect() as connection:
+        old = settings.read(connection, key)
+        when = now()
+        connection.execute(
+            update(platform_settings)
+            .where(platform_settings.c.key == key)
+            .values(
+                value=json.dumps(value),
+                changed_by=handler["handler_id"],
+                changed_at=when,
+            )
+        )
+        connection.execute(
+            insert(setting_changes).values(
+                key=key,
+                old_value=json.dumps(old),
+                new_value=json.dumps(value),
+                changed_by=handler["handler_id"],
+                changed_at=when,
+            )
+        )
+        return setting_view(connection, key)
+
+
+@app.get("/api/models", operation_id="list_models")
+def list_models() -> list[dict[str, Any]]:
+    """List the models the claim agent may use, with their efforts and prices."""
+    return versions.models_allowed()
+
+
+def version_view(row: dict[str, Any], current_version: int) -> dict[str, Any]:
+    keys = ["version", "model", "reasoning_effort", "reason", "proposed_by"]
+    keys += ["approved_by", "approved_at", "round_id"]
+    return {key: row[key] for key in keys} | {
+        "is_current": row["version"] == current_version
+    }
+
+
+@app.get("/api/configurations", operation_id="list_configurations")
+def list_configurations() -> list[dict[str, Any]]:
+    """List every version of the claim agent's configuration, with its scores."""
+    with db.connect() as connection:
+        current = versions.current(connection)
+        rows = (
+            connection.execute(
+                select(configurations).order_by(configurations.c.version)
+            )
+            .mappings()
+            .all()
+        )
+        return [
+            version_view(dict(row), current)
+            | {"scores": versions.scores(connection, row["version"])}
+            for row in rows
+        ]
+
+
+@app.get("/api/configurations/current", operation_id="get_current_configuration")
+def get_current_configuration() -> dict[str, Any]:
+    """Get the version of the claim agent's configuration now in use."""
+    with db.connect() as connection:
+        found = versions.configuration(connection, versions.current(connection))
+    return found or {}
+
+
+def version_or_404(connection: Connection, version: int) -> dict[str, Any]:
+    found = versions.configuration(connection, version)
+    if found is None:
+        raise HTTPException(404, f"There is no version {version} of the configuration.")
+    return found
+
+
+@app.get("/api/configurations/{version}", operation_id="get_claim_configuration")
+def get_claim_configuration(version: int) -> dict[str, Any]:
+    """Get a version's instructions, model and reasoning effort, with no scores."""
+    with db.connect() as connection:
+        found = version_or_404(connection, version)
+    keys = ["version", "instructions", "model", "reasoning_effort"]
+    return {key: found[key] for key in keys}
+
+
+@app.get("/api/configurations/{version}/diff", operation_id="get_configuration_diff")
+def get_configuration_diff(version: int) -> dict[str, Any]:
+    """Show what a version of the configuration changed from the one before."""
+    with db.connect() as connection:
+        found = version_or_404(connection, version)
+        before = versions.configuration(connection, version - 1)
+        current = versions.current(connection)
+    return version_view(found, current) | {
+        "previous": before["version"] if before else None,
+        "instructions": versions.diff_lines(
+            before["instructions"] if before else found["instructions"],
+            found["instructions"],
+        ),
+        "model": {
+            "before": before["model"] if before else None,
+            "after": found["model"],
+        },
+        "reasoning_effort": {
+            "before": before["reasoning_effort"] if before else None,
+            "after": found["reasoning_effort"],
+        },
+    }
+
+
+@app.get("/api/recipes", operation_id="list_recipes")
+def list_recipes() -> list[dict[str, Any]]:
+    """List every version of the improver's recipe."""
+    with db.connect() as connection:
+        current = versions.current(connection, "current_recipe")
+        rows = (
+            connection.execute(select(recipes).order_by(recipes.c.version))
+            .mappings()
+            .all()
+        )
+    keys = [
+        "version",
+        "reason",
+        "proposed_by",
+        "approved_by",
+        "approved_at",
+        "round_id",
+    ]
+    return [
+        {key: row[key] for key in keys} | {"is_current": row["version"] == current}
+        for row in rows
+    ]
+
+
+@app.get("/api/recipes/{version}/diff", operation_id="get_recipe_diff")
+def get_recipe_diff(version: int) -> dict[str, Any]:
+    """Show what a version of the recipe changed from the one before."""
+    with db.connect() as connection:
+        found = versions.recipe(connection, version)
+        if found is None:
+            raise HTTPException(404, f"There is no version {version} of the recipe.")
+        before = versions.recipe(connection, version - 1)
+    return {
+        "version": version,
+        "previous": before["version"] if before else None,
+        "reason": found["reason"],
+        "proposed_by": found["proposed_by"],
+        "approved_by": found["approved_by"],
+        "approved_at": found["approved_at"],
+        "lines": versions.diff_lines(
+            before["recipe"] if before else found["recipe"], found["recipe"]
+        ),
+    }

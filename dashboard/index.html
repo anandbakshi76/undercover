@@ -5,9 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>UnderCover Claims</title>
     <script>
+      const stored = localStorage.getItem("undercover-theme");
       document.documentElement.dataset.theme =
-        localStorage.getItem("undercover-theme") ??
-        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        stored === "light" || stored === "dark"
+          ? stored
+          : matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
     </script>
     <link
       rel="icon"

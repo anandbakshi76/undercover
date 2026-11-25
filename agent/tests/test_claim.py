@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg.rows import dict_row
+from sqlalchemy import update
 
 from agent import checkpoints, main
 from agent import claim as claim_agent
@@ -26,7 +27,8 @@ from agent.tests.stubs import (
     recorded_steps,
     stub,
 )
-from backend import main as backend
+from backend import db
+from backend.db import configurations
 
 ERROR = RuntimeError("model unavailable")
 LINES = [
@@ -297,9 +299,13 @@ def test_a_claim_is_never_decided_or_paid_twice():
     assert claim("CLM-1001")["payment"]["amount"] == 420.0
 
 
-def test_instructions_come_from_the_backend(tmp_path, monkeypatch):
-    (tmp_path / "claim.md").write_text("Decide claims carefully.", encoding="utf-8")
-    monkeypatch.setattr(backend, "INSTRUCTIONS", tmp_path)
+def test_instructions_come_from_the_runs_version_of_the_configuration():
+    with db.connect() as connection:
+        connection.execute(
+            update(configurations)
+            .where(configurations.c.version == 1)
+            .values(instructions="Decide claims carefully.")
+        )
     model = stub(*approve_and_pay("CLM-1001"))
     claim_agent.work_claim("CLM-1001", new_run(1), model)
     assert model.seen[0][0].content == "Decide claims carefully."
@@ -378,7 +384,9 @@ def test_the_pool_keeps_to_four_connections_with_langgraphs_settings():
 
 
 def test_the_command_line_works_one_claim(monkeypatch):
-    monkeypatch.setattr(main, "model", lambda: stub(*approve_and_pay("CLM-1001")))
+    monkeypatch.setattr(
+        main, "model", lambda _config: stub(*approve_and_pay("CLM-1001"))
+    )
     assert cli(["CLM-1001"]) == "CLM-1001: approved, $420.00 paid"
     assert main.call("GET", "/api/claims/CLM-1001")["status"] == "decided"
     assert cli(["CLM-1001"]) == "CLM-1001: approved, $420.00 paid"
@@ -390,22 +398,29 @@ def test_the_command_line_carries_on_a_claim_in_progress(monkeypatch):
     stopped = stub(call_tool("get_claim", claim_id="CLM-1001"), KeyboardInterrupt())
     with pytest.raises(KeyboardInterrupt):
         claim_agent.work_claim("CLM-1001", new_run(1), stopped, saver)
-    monkeypatch.setattr(main, "model", lambda: stub(*approve_and_pay("CLM-1001")[1:]))
+    monkeypatch.setattr(
+        main, "model", lambda _config: stub(*approve_and_pay("CLM-1001")[1:])
+    )
     assert cli(["CLM-1001"]) == "CLM-1001: approved, $420.00 paid"
 
 
 def test_model_name(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.delenv("MODEL_NAME", raising=False)
-    default = main.model()
+    config = {"model": "openai/gpt-6-luna", "reasoning_effort": "low"}
+    default = main.model(config)
     assert default.model_name == "openai/gpt-6-luna"
     assert default.reasoning_effort == "low"
-    assert main.model_settings() == ("openai/gpt-6-luna", "low")
+    assert main.model_settings(config) == ("openai/gpt-6-luna", "low")
+    other = {"model": "google/gemini-3.5-flash-lite", "reasoning_effort": "minimal"}
+    assert main.model(other).reasoning_effort == "minimal"
+    none = {"model": "openai/gpt-6-luna", "reasoning_effort": "none"}
+    assert main.model(none).reasoning_effort == "none"
     monkeypatch.setenv("MODEL_NAME", "openrouter/free")
-    chosen = main.model()
+    chosen = main.model(config)
     assert chosen.model_name == "openrouter/free"
     assert chosen.reasoning_effort is None
-    assert main.model_settings() == ("openrouter/free", "none")
+    assert main.model_settings(config) == ("openrouter/free", "default")
 
 
 def test_the_agent_never_reads_the_data_folder():

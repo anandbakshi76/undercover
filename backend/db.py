@@ -9,6 +9,7 @@ import os
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,7 @@ from sqlalchemy.pool import NullPool
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 DEFAULT_DB = Path(__file__).resolve().parent / "undercover.db"
+INSTRUCTIONS = Path(__file__).resolve().parent / "instructions"
 SCHEMA = "undercover"
 MAX_CONNECTIONS = 4
 WAIT_FOR_CONNECTION = 300
@@ -64,6 +66,7 @@ claims = Table(
     Column("thread_id", Text),
     Column("evaluation_id", Text),
     Column("source_id", Text),
+    Column("sign_off_required", Integer, nullable=False, server_default="0"),
 )
 runs = Table(
     "runs",
@@ -80,6 +83,7 @@ runs = Table(
     Column("tiny", Integer),
     Column("model", Text),
     Column("reasoning_effort", Text),
+    Column("version", Integer),
 )
 run_claims = Table(
     "run_claims",
@@ -99,6 +103,54 @@ steps = Table(
     Column("created_at", Text, nullable=False),
 )
 
+platform_settings = Table(
+    "settings",
+    metadata,
+    Column("key", Text, primary_key=True),
+    Column("value", Text, nullable=False),
+    Column("changed_by", Text),
+    Column("changed_at", Text),
+)
+setting_changes = Table(
+    "setting_changes",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("key", Text, nullable=False),
+    Column("old_value", Text, nullable=False),
+    Column("new_value", Text, nullable=False),
+    Column("changed_by", Text, nullable=False),
+    Column("changed_at", Text, nullable=False),
+)
+configurations = Table(
+    "configurations",
+    metadata,
+    Column("version", Integer, primary_key=True),
+    Column("instructions", Text, nullable=False),
+    Column("model", Text, nullable=False),
+    Column("reasoning_effort", Text, nullable=False),
+    Column("reason", Text, nullable=False),
+    Column("proposed_by", Text, nullable=False),
+    Column("approved_by", Text, nullable=False),
+    Column("approved_at", Text, nullable=False),
+    Column("round_id", Text),
+)
+recipes = Table(
+    "recipes",
+    metadata,
+    Column("version", Integer, primary_key=True),
+    Column("recipe", Text, nullable=False),
+    Column("reason", Text, nullable=False),
+    Column("proposed_by", Text, nullable=False),
+    Column("approved_by", Text, nullable=False),
+    Column("approved_at", Text, nullable=False),
+    Column("round_id", Text),
+)
+improvement_state = Table(
+    "improvement_state",
+    metadata,
+    Column("key", Text, primary_key=True),
+    Column("value", Integer, nullable=False),
+)
 eval_claims = Table(
     "eval_claims",
     metadata,
@@ -222,6 +274,44 @@ def seed(connection: Connection) -> None:
     )
 
 
+def seed_improvement(connection: Connection) -> None:
+    """Make version 1 of the configuration and the recipe, and the settings."""
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    improvement = load("improvement.json")
+    values = {"approval_limit": load("company.json")["payout_approval_limit"]}
+    values |= improvement
+    connection.execute(
+        insert(platform_settings),
+        [{"key": key, "value": json.dumps(value)} for key, value in values.items()],
+    )
+    connection.execute(
+        insert(configurations).values(
+            version=1,
+            instructions=(INSTRUCTIONS / "claim.md").read_text(encoding="utf-8"),
+            model="openai/gpt-6-luna",
+            reasoning_effort="low",
+            reason="The claim agent as it was before the improver.",
+            proposed_by="UnderCover",
+            approved_by="UnderCover",
+            approved_at=now,
+        )
+    )
+    connection.execute(
+        insert(recipes).values(
+            version=1,
+            recipe=(INSTRUCTIONS / "recipe.md").read_text(encoding="utf-8"),
+            reason="The first recipe, from the course.",
+            proposed_by="UnderCover",
+            approved_by="UnderCover",
+            approved_at=now,
+        )
+    )
+    connection.execute(
+        insert(improvement_state),
+        [{"key": "current_version", "value": 1}, {"key": "current_recipe", "value": 1}],
+    )
+
+
 def seed_answer_key(connection: Connection) -> None:
     """Store the two labelled sets and the handlers' decisions, out of the queue."""
     sets = {
@@ -270,6 +360,7 @@ def init() -> None:
         if connection.execute(select(claims.c.claim_id).limit(1)).first() is None:
             seed(connection)
             seed_answer_key(connection)
+            seed_improvement(connection)
 
 
 def reset() -> None:

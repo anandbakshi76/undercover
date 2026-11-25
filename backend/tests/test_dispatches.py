@@ -4,7 +4,12 @@ from backend import db, main
 
 
 def create(client, concurrency=3):
-    body = {"concurrency": concurrency, "model": "m", "reasoning_effort": "low"}
+    body = {
+        "concurrency": concurrency,
+        "version": 1,
+        "model": "m",
+        "reasoning_effort": "low",
+    }
     return client.post("/api/runs/dispatch", json=body).json()["run_id"]
 
 

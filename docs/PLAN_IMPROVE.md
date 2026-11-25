@@ -118,17 +118,17 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 
 **Success criteria**
 
-- [ ] pytest: seeding makes configuration version 1 (the claim instructions, Luna, low), recipe version 1 and the starting settings, and `npm run seed` takes a changed database back to them
-- [ ] pytest: `change_setting` records who and when, refuses a value that makes no sense (a negative limit, an agents-at-once outside 1 to 25), and returns 403 for Marcus and 401 with no sign-in
-- [ ] pytest: a new approval limit applies to the next decision recorded and leaves earlier decisions alone
-- [ ] pytest: a dispatch uses the current version and records it; an evaluation started on the Scoreboard does too; the claim agent built for a version uses that version's instructions, model and reasoning effort
-- [ ] pytest: a claim carried on keeps the version of the run that started its attempt
-- [ ] pytest: `get_claim_configuration` returns no scores, and the diff of a version against the one before matches `difflib` for a known pair
-- [ ] pytest: with `MODEL_NAME` set the only model allowed is that one at `default`, priced at 0
-- [ ] vitest: the Settings page shows every setting, lets a senior handler change one only after a confirmation, tells another handler what they can't do and why, and keeps the appearance in the browser; the Configuration page shows the versions, marks the current one and shows the diff; the shared components render their states
-- [ ] e2e: a handler changes a setting through the dialog, switches the theme, and opens the Configuration page
-- [ ] Playwright MCP: Settings and Configuration in light and dark mode, with no horizontal scroll at laptop width
-- [ ] `npm run check` passes with `.env` moved out of the way
+- [x] pytest: seeding makes configuration version 1 (the claim instructions, Luna, low), recipe version 1 and the starting settings, and `npm run seed` takes a changed database back to them
+- [x] pytest: `change_setting` records who and when, refuses a value that makes no sense (a negative limit, an agents-at-once outside 1 to 25), and returns 403 for Marcus and 401 with no sign-in
+- [x] pytest: a new approval limit applies to the next decision recorded and leaves earlier decisions alone
+- [x] pytest: a dispatch uses the current version and records it; an evaluation started on the Scoreboard does too; the claim agent built for a version uses that version's instructions, model and reasoning effort
+- [x] pytest: a claim carried on keeps the version of the run that started its attempt
+- [x] pytest: `get_claim_configuration` returns no scores, and the diff of a version against the one before matches `difflib` for a known pair
+- [x] pytest: with `MODEL_NAME` set the only model allowed is that one at `default`, priced at 0
+- [x] vitest: the Settings page shows every setting, lets a senior handler change one only after a confirmation, tells another handler what they can't do and why, and keeps the appearance in the browser; the Configuration page shows the versions, marks the current one and shows the diff; the shared components render their states
+- [x] e2e: a handler changes a setting through the dialog, switches the theme, and opens the Configuration page
+- [ ] (done with the live runs in Phase 7) Playwright MCP: Settings and Configuration in light and dark mode, with no horizontal scroll at laptop width
+- [x] `npm run check` passes with `.env` moved out of the way
 
 ## Phase 3: The judge
 

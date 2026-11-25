@@ -14,6 +14,7 @@ def create(client, evaluation_set="evaluation", tiny=False, concurrency=3, model
         "evaluation_set": evaluation_set,
         "tiny": tiny,
         "model": model,
+        "version": 1,
         "reasoning_effort": "low",
     }
     return client.post("/api/runs/evaluation", json=body)
@@ -24,7 +25,7 @@ def finish(client, run_id, status="finished"):
 
 
 def dispatch(client):
-    body = {"concurrency": 3, "model": "m", "reasoning_effort": "low"}
+    body = {"concurrency": 3, "version": 1, "model": "m", "reasoning_effort": "low"}
     return client.post("/api/runs/dispatch", json=body)
 
 

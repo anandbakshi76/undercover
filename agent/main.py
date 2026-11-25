@@ -13,7 +13,6 @@ from pydantic import SecretStr
 
 BACKEND_URL = "http://127.0.0.1:8000"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_MODEL = "openai/gpt-6-luna"
 MODEL_TIMEOUT = 120
 RESULT_LENGTH = 300
 RETRY_DELAY = 1.0
@@ -33,20 +32,22 @@ def call(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
     return response.json()
 
 
-def model_settings() -> tuple[str, str]:
-    """Return the model's name and reasoning effort, which is none for MODEL_NAME."""
+def model_settings(config: dict[str, Any]) -> tuple[str, str]:
+    """Return a configuration's model and reasoning effort, or MODEL_NAME at default."""
     name = os.getenv("MODEL_NAME")
-    return (name, "none") if name else (DEFAULT_MODEL, "low")
+    if name:
+        return name, "default"
+    return config["model"], config["reasoning_effort"]
 
 
-def model() -> ChatOpenAI:
-    """Return the model named in MODEL_NAME, or GPT-6 Luna by default."""
-    name, effort = model_settings()
+def model(config: dict[str, Any]) -> ChatOpenAI:
+    """Return the model a configuration names, or MODEL_NAME if it is set."""
+    name, effort = model_settings(config)
     return ChatOpenAI(
         model=name,
         base_url=OPENROUTER_BASE_URL,
         api_key=SecretStr(os.environ["OPENROUTER_API_KEY"]),
-        reasoning_effort=None if effort == "none" else effort,
+        reasoning_effort=None if effort == "default" else effort,
         timeout=MODEL_TIMEOUT,
     )
 

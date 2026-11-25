@@ -3,7 +3,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { parseRoute, THEME_KEY } from "./hooks";
 import { renderSignedIn } from "./signedIn";
-import { claim, evaluationDetail, mockApi, policy, summary } from "./testing";
+import {
+  claim,
+  configDiff,
+  currentConfiguration,
+  evaluationDetail,
+  mockApi,
+  policy,
+  summary,
+  version,
+} from "./testing";
 
 afterEach(() => {
   cleanup();
@@ -17,7 +26,8 @@ describe("parseRoute", () => {
   it("reads each page from the hash", () => {
     expect(parseRoute("")).toEqual({ page: "queue" });
     expect(parseRoute("#/")).toEqual({ page: "queue" });
-    expect(parseRoute("#/instructions")).toEqual({ page: "instructions" });
+    expect(parseRoute("#/configuration")).toEqual({ page: "configuration" });
+    expect(parseRoute("#/settings")).toEqual({ page: "settings" });
     expect(parseRoute("#/claims/CLM-1001")).toEqual({
       page: "claim",
       claimId: "CLM-1001",
@@ -65,15 +75,51 @@ describe("App", () => {
     expect(await screen.findByLabelText("Measures")).toBeDefined();
   });
 
-  it("shows the instructions page", async () => {
+  it("shows the configuration and settings pages from the hash", async () => {
     mockApi({
-      "GET /api/instructions": {
-        claim: "Decide claims.",
-      },
+      "GET /api/configurations": [version()],
+      "GET /api/configurations/current": currentConfiguration(),
+      "GET /api/configurations/1/diff": configDiff(),
+      "GET /api/settings": [],
+      "GET /api/models": [],
+      "GET /api/settings/changes": [],
     });
-    window.location.hash = "#/instructions";
+    window.location.hash = "#/configuration";
     renderSignedIn(<App />);
-    expect(await screen.findByText("Decide claims.")).toBeDefined();
+    expect(
+      await screen.findByRole("heading", { name: "Configuration" }),
+    ).toBeDefined();
+    expect(
+      screen
+        .getByRole("link", { name: "Configuration" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    act(() => {
+      window.location.hash = "#/settings";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Settings" }),
+    ).toBeDefined();
+  });
+
+  it("applies the appearance chosen on the settings page", async () => {
+    mockApi({
+      "GET /api/settings": [],
+      "GET /api/models": [],
+      "GET /api/settings/changes": [],
+    });
+    window.location.hash = "#/settings";
+    renderSignedIn(<App />);
+    fireEvent.click(await screen.findByRole("radio", { name: "Dark" }));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    fireEvent.click(screen.getByRole("radio", { name: "Light" }));
+    expect(document.documentElement.dataset.theme).toBe("light");
+    fireEvent.click(
+      screen.getByRole("radio", { name: "The same as the computer" }),
+    );
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(localStorage.getItem(THEME_KEY)).toBeNull();
   });
 
   it("shows a claim page and follows the hash", async () => {
@@ -103,7 +149,7 @@ describe("dark mode", () => {
       "GET /api/claims": [summary()],
       "GET /api/dispatches/latest": null,
     });
-    document.documentElement.dataset.theme = "dark";
+    localStorage.setItem(THEME_KEY, "dark");
     renderSignedIn(<App />);
     const toggle = await screen.findByRole("button", { name: "Dark mode" });
     expect(toggle.getAttribute("aria-pressed")).toBe("true");

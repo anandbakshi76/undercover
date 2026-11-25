@@ -404,9 +404,12 @@ def work_thread(
     """Work a claim from its last checkpoint, release it if it fails, and report."""
     claim = main.call("GET", f"/api/claims/{claim_id}")
     thread_id = claim["thread_id"]
-    instructions = main.call("GET", "/api/instructions")["claim"]
+    configuration = main.call("GET", f"/api/configurations/{claim['version']}")
     graph = claim_graph(
-        llm or main.model(), saver or checkpoints.saver(), instructions, run_id
+        llm or main.model(configuration),
+        saver or checkpoints.saver(),
+        configuration["instructions"],
+        run_id,
     )
     config = (
         main.tracing(thread_id, [run_id] if run_id else None)

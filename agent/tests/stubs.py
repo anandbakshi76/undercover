@@ -90,7 +90,12 @@ def new_run(limit=1):
 
 def new_dispatch(concurrency=3):
     """A dispatch, as the agent's service creates it."""
-    body = {"concurrency": concurrency, "model": "stub", "reasoning_effort": "low"}
+    body = {
+        "concurrency": concurrency,
+        "version": 1,
+        "model": "stub",
+        "reasoning_effort": "low",
+    }
     return main.call("POST", "/api/runs/dispatch", body)["run_id"]
 
 

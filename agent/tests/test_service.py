@@ -49,7 +49,7 @@ def payments(claim_id):
 def test_a_sign_off_reaches_the_service_which_resumes_and_pays_once(
     wired, monkeypatch, service_client
 ):
-    monkeypatch.setattr(main, "model", stub)
+    monkeypatch.setattr(main, "model", lambda _config: stub())
     assert hold().endswith("waiting for sign-off")
     signed = sign_off()
     assert signed["status"] == "in_progress"
@@ -69,7 +69,9 @@ def test_resume_needs_a_claim_that_is_in_progress(service_client):
 
 
 def test_the_service_runs_one_claim(monkeypatch, service_client):
-    monkeypatch.setattr(main, "model", lambda: stub(*approve_and_pay("CLM-1001")))
+    monkeypatch.setattr(
+        main, "model", lambda _config: stub(*approve_and_pay("CLM-1001"))
+    )
     response = service_client.post("/api/claims/CLM-1001/run")
     assert response.status_code == 200
     assert claim("CLM-1001")["status"] == "decided"
@@ -79,7 +81,9 @@ def test_the_service_runs_one_claim(monkeypatch, service_client):
 
 
 def test_the_service_passes_on_the_backends_refusals(monkeypatch, service_client):
-    monkeypatch.setattr(main, "model", lambda: stub(*approve_and_pay("CLM-1001")))
+    monkeypatch.setattr(
+        main, "model", lambda _config: stub(*approve_and_pay("CLM-1001"))
+    )
     service_client.post("/api/claims/CLM-1001/run")
     refused = service_client.post("/api/claims/CLM-1001/run")
     assert refused.status_code == 409
@@ -123,7 +127,7 @@ def run_of(response):
 def test_the_service_starts_a_dispatch_and_works_it(monkeypatch, service_client):
     monkeypatch.delenv("MODEL_NAME", raising=False)
     model = ClaimStub(messages=iter([]))
-    monkeypatch.setattr(main, "model", lambda: model)
+    monkeypatch.setattr(main, "model", lambda _config: model)
     response = service_client.post("/api/dispatches", json={"concurrency": 5})
     assert response.status_code == 200
     run = run_of(response)
@@ -143,7 +147,7 @@ def test_another_model_is_recorded_with_no_effort(monkeypatch, service_client):
     monkeypatch.setattr(dispatcher, "dispatch", lambda run_id, concurrency: [])
     run = run_of(service_client.post("/api/dispatches", json={"concurrency": 2}))
     assert run["model"] == "openrouter/free"
-    assert run["reasoning_effort"] == "none"
+    assert run["reasoning_effort"] == "default"
 
 
 def test_a_second_start_is_refused_while_one_is_running(service_client):

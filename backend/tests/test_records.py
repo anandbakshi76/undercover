@@ -65,10 +65,6 @@ def test_get_claim_history_leaves_out_personal_details(client):
         assert detail not in history
 
 
-def test_get_instructions(client):
-    assert "UnderCover Agent" in client.get("/api/instructions").json()["claim"]
-
-
 def test_list_handlers(client):
     handlers = client.get("/api/handlers").json()
     assert [h["handler_id"] for h in handlers] == ["HND-01", "HND-02", "HND-03"]

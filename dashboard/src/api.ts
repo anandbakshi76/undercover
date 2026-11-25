@@ -167,8 +167,79 @@ export interface EvaluationDetail extends Evaluation {
   claims: EvaluationClaim[];
 }
 
-export interface Instructions {
-  claim: string;
+export interface DiffLine {
+  kind: "added" | "removed" | "same" | "gap";
+  text: string;
+}
+
+export interface Setting {
+  key: string;
+  value: unknown;
+  changed_by: string | null;
+  changed_at: string | null;
+}
+
+export interface SettingChange {
+  key: string;
+  old: unknown;
+  new: unknown;
+  changed_by: string;
+  changed_at: string;
+}
+
+export interface ModelAllowed {
+  model: string;
+  reasoning_efforts: string[];
+  input_price: number;
+  output_price: number;
+}
+
+export interface VersionScore {
+  decision_accuracy: number;
+  accuracy: number;
+  grade: number | null;
+  cost_per_claim: number;
+  seconds_per_claim: number;
+  runs: number;
+}
+
+export interface ConfigVersion {
+  version: number;
+  model: string;
+  reasoning_effort: string;
+  reason: string;
+  proposed_by: string;
+  approved_by: string;
+  approved_at: string;
+  round_id: string | null;
+  is_current: boolean;
+  scores: { evaluation: VersionScore | null; held_out: VersionScore | null };
+}
+
+export interface CurrentConfiguration {
+  version: number;
+  instructions: string;
+  model: string;
+  reasoning_effort: string;
+  reason: string;
+  proposed_by: string;
+  approved_by: string;
+  approved_at: string;
+}
+
+export interface Change<T> {
+  before: T | null;
+  after: T;
+}
+
+export interface ConfigDiff extends Omit<
+  ConfigVersion,
+  "scores" | "model" | "reasoning_effort"
+> {
+  previous: number | null;
+  instructions: DiffLine[];
+  model: Change<string>;
+  reasoning_effort: Change<string>;
 }
 
 export interface Handler {
@@ -225,7 +296,20 @@ export const api = {
   claim: (claimId: string) => request<ClaimDetail>(`/api/claims/${claimId}`),
   policy: (policyId: string) => request<Policy>(`/api/policies/${policyId}`),
   steps: (claimId: string) => request<Step[]>(`/api/claims/${claimId}/steps`),
-  instructions: () => request<Instructions>("/api/instructions"),
+  settings: () => request<Setting[]>("/api/settings"),
+  settingChanges: () => request<SettingChange[]>("/api/settings/changes"),
+  changeSetting: (key: string, value: unknown) =>
+    request<Setting>(`/api/settings/${key}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    }),
+  models: () => request<ModelAllowed[]>("/api/models"),
+  configurations: () => request<ConfigVersion[]>("/api/configurations"),
+  currentConfiguration: () =>
+    request<CurrentConfiguration>("/api/configurations/current"),
+  configurationDiff: (version: number) =>
+    request<ConfigDiff>(`/api/configurations/${String(version)}/diff`),
   latestDispatch: () => request<Run | null>("/api/dispatches/latest"),
   me: () => request<Handler>("/api/me"),
   handlers: () => request<Handler[]>("/api/handlers"),

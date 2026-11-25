@@ -54,15 +54,22 @@ test("a claim that fails twice needs a handler", async ({ page, request }) => {
   ).toBeVisible();
 });
 
-test("the instructions page shows the claim agent's instructions, read only", async ({
+test("the configuration page shows version 1 and its instructions, read only", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByRole("link", { name: "Agent instructions" }).click();
+  await page.getByRole("link", { name: "Configuration" }).click();
   await expect(
-    page
-      .getByRole("region", { name: "Working a claim" })
-      .getByText("You decide one travel insurance claim"),
+    page.getByRole("heading", { name: "Configuration" }),
+  ).toBeVisible();
+  const current = page.getByRole("region", { name: "Current version" });
+  await expect(current.getByText("Current version: 1")).toBeVisible();
+  await expect(current.getByText("openai/gpt-6-luna")).toBeVisible();
+  await expect(
+    current.getByText("You decide one travel insurance claim"),
   ).toBeVisible();
   await expect(page.getByRole("textbox")).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "Changes in version 1" }),
+  ).toContainText("nothing before it to compare with");
 });

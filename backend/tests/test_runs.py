@@ -23,7 +23,12 @@ def new_run():
 
 
 def dispatch(client, concurrency=3):
-    body = {"concurrency": concurrency, "model": "m", "reasoning_effort": "low"}
+    body = {
+        "concurrency": concurrency,
+        "version": 1,
+        "model": "m",
+        "reasoning_effort": "low",
+    }
     return client.post("/api/runs/dispatch", json=body)
 
 
@@ -240,12 +245,6 @@ def test_running_needs_the_agent_to_be_up(client, agent):
     assert response.status_code == 503
     assert response.json()["detail"] == "The agent isn't running."
     assert status(client, "CLM-1001") == "waiting"
-
-
-def test_the_instructions_are_the_claim_agents(client):
-    instructions = client.get("/api/instructions").json()
-    assert list(instructions) == ["claim"]
-    assert instructions["claim"].startswith("# Working a claim")
 
 
 def test_a_restart_leaves_claims_in_progress_and_runs_running(client):

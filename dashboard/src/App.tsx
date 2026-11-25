@@ -1,10 +1,11 @@
 import { useAuth } from "./authContext";
 import { ClaimPage } from "./ClaimPage";
+import { Configuration } from "./Configuration";
 import { EvaluationPage } from "./EvaluationPage";
 import { type Route, useRoute, useTheme } from "./hooks";
-import { Instructions } from "./Instructions";
 import { Queue } from "./Queue";
 import { Scoreboard } from "./Scoreboard";
+import { Settings } from "./Settings";
 import { SignIn } from "./SignIn";
 
 function Page({ route }: Readonly<{ route: Route }>) {
@@ -13,8 +14,10 @@ function Page({ route }: Readonly<{ route: Route }>) {
       return <ClaimPage key={route.claimId} claimId={route.claimId} />;
     case "evaluation":
       return <EvaluationPage key={route.runId} runId={route.runId} />;
-    case "instructions":
-      return <Instructions />;
+    case "configuration":
+      return <Configuration />;
+    case "settings":
+      return <Settings />;
     case "scoreboard":
       return <Scoreboard />;
     case "queue":
@@ -53,10 +56,16 @@ export function App() {
             Scoreboard
           </a>
           <a
-            href="#/instructions"
-            aria-current={route.page === "instructions" ? "page" : undefined}
+            href="#/configuration"
+            aria-current={route.page === "configuration" ? "page" : undefined}
           >
-            Agent instructions
+            Configuration
+          </a>
+          <a
+            href="#/settings"
+            aria-current={route.page === "settings" ? "page" : undefined}
+          >
+            Settings
           </a>
           <span className="who">
             <strong>{handler.name}</strong>

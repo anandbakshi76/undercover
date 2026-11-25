@@ -1,5 +1,11 @@
 import { vi } from "vitest";
 import type {
+  ConfigDiff,
+  ConfigVersion,
+  CurrentConfiguration,
+  ModelAllowed,
+  Setting,
+  SettingChange,
   ClaimDetail,
   ClaimSummary,
   Handler,
@@ -236,4 +242,102 @@ export function evaluationDetail(
   overrides: Partial<EvaluationDetail> = {},
 ): EvaluationDetail {
   return { ...evaluation(), claims: [evaluationClaim()], ...overrides };
+}
+
+export function version(overrides: Partial<ConfigVersion> = {}): ConfigVersion {
+  return {
+    version: 1,
+    model: "openai/gpt-6-luna",
+    reasoning_effort: "low",
+    reason: "The claim agent as it was before the improver.",
+    proposed_by: "UnderCover",
+    approved_by: "UnderCover",
+    approved_at: "2026-11-25T10:00:00+00:00",
+    round_id: null,
+    is_current: true,
+    scores: { evaluation: null, held_out: null },
+    ...overrides,
+  };
+}
+
+export function currentConfiguration(
+  overrides: Partial<CurrentConfiguration> = {},
+): CurrentConfiguration {
+  return {
+    version: 1,
+    instructions: "# Working a claim\n\nDecide one claim.",
+    model: "openai/gpt-6-luna",
+    reasoning_effort: "low",
+    reason: "The claim agent as it was before the improver.",
+    proposed_by: "UnderCover",
+    approved_by: "UnderCover",
+    approved_at: "2026-11-25T10:00:00+00:00",
+    ...overrides,
+  };
+}
+
+export function configDiff(overrides: Partial<ConfigDiff> = {}): ConfigDiff {
+  return {
+    version: 1,
+    model: { before: null, after: "openai/gpt-6-luna" },
+    reasoning_effort: { before: null, after: "low" },
+    reason: "The claim agent as it was before the improver.",
+    proposed_by: "UnderCover",
+    approved_by: "UnderCover",
+    approved_at: "2026-11-25T10:00:00+00:00",
+    round_id: null,
+    is_current: true,
+    previous: null,
+    instructions: [],
+    ...overrides,
+  };
+}
+
+export function setting(
+  key: string,
+  value: unknown,
+  overrides: Partial<Setting> = {},
+): Setting {
+  return { key, value, changed_by: null, changed_at: null, ...overrides };
+}
+
+export const STARTING_SETTINGS: Setting[] = [
+  setting("approval_limit", 1000),
+  setting("objectives", { accuracy: 0.6, grade: 1 }),
+  setting("noise", {
+    accuracy: 0.1,
+    grade: 0.15,
+    cost_per_claim: 0.15,
+    seconds_per_claim: 0.15,
+  }),
+  setting("tolerance", {
+    accuracy: 0.1,
+    grade: 0.15,
+    cost_per_claim: 1,
+    seconds_per_claim: 0.25,
+  }),
+  setting("round_limit", 0.5),
+  setting("improver_concurrency", 25),
+];
+
+export const MODELS: ModelAllowed[] = [
+  {
+    model: "openai/gpt-6-luna",
+    reasoning_efforts: ["none", "low", "medium"],
+    input_price: 0.1,
+    output_price: 0.5,
+  },
+];
+
+export function settingChange(
+  overrides: Partial<SettingChange> = {},
+): SettingChange {
+  return {
+    key: "round_limit",
+    old: 0.5,
+    new: 0.75,
+    changed_by: "Dana Whitfield",
+    changed_at: "2026-11-25T11:00:00+00:00",
+    ...overrides,
+  };
 }

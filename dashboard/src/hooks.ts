@@ -4,17 +4,55 @@ export const POLL_MS = 2000;
 export const THEME_KEY = "undercover-theme";
 
 export type Theme = "light" | "dark";
+export type Appearance = Theme | "system";
+
+const appearanceListeners = new Set<() => void>();
+
+function storedAppearance(): Appearance {
+  const stored = localStorage.getItem(THEME_KEY);
+  return stored === "light" || stored === "dark" ? stored : "system";
+}
+
+function subscribeAppearance(onChange: () => void): () => void {
+  appearanceListeners.add(onChange);
+  return () => {
+    appearanceListeners.delete(onChange);
+  };
+}
+
+export function setAppearance(next: Appearance): void {
+  if (next === "system") localStorage.removeItem(THEME_KEY);
+  else localStorage.setItem(THEME_KEY, next);
+  for (const listener of appearanceListeners) listener();
+}
+
+function systemTheme(): Theme {
+  return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function subscribeSystem(onChange: () => void): () => void {
+  const query = matchMedia("(prefers-color-scheme: dark)");
+  query.addEventListener("change", onChange);
+  return () => {
+    query.removeEventListener("change", onChange);
+  };
+}
+
+export function useAppearance(): Appearance {
+  return useSyncExternalStore(subscribeAppearance, storedAppearance);
+}
 
 export function useTheme() {
-  const [theme, setTheme] = useState<Theme>(() =>
-    document.documentElement.dataset.theme === "dark" ? "dark" : "light",
-  );
+  const appearance = useAppearance();
+  const system = useSyncExternalStore(subscribeSystem, systemTheme);
+  const theme = appearance === "system" ? system : appearance;
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
   const toggle = useCallback(() => {
-    const next = theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem(THEME_KEY, next);
-    setTheme(next);
+    setAppearance(theme === "dark" ? "light" : "dark");
   }, [theme]);
 
   return { theme, toggle };
@@ -23,7 +61,8 @@ export function useTheme() {
 export type Route =
   | { page: "queue" }
   | { page: "claim"; claimId: string }
-  | { page: "instructions" }
+  | { page: "configuration" }
+  | { page: "settings" }
   | { page: "scoreboard" }
   | { page: "evaluation"; runId: string };
 
@@ -32,7 +71,8 @@ export function parseRoute(hash: string): Route {
   if (claim?.[1]) return { page: "claim", claimId: claim[1] };
   const evaluation = /^#\/evaluations\/([\w-]+)$/.exec(hash);
   if (evaluation?.[1]) return { page: "evaluation", runId: evaluation[1] };
-  if (hash === "#/instructions") return { page: "instructions" };
+  if (hash === "#/configuration") return { page: "configuration" };
+  if (hash === "#/settings") return { page: "settings" };
   if (hash === "#/scoreboard") return { page: "scoreboard" };
   return { page: "queue" };
 }
