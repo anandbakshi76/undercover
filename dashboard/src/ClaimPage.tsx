@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   api,
   type ClaimDetail,
@@ -8,8 +8,11 @@ import {
 } from "./api";
 import { useAuth } from "./authContext";
 import { Badge } from "./Badge";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { DECISION_LABELS, dateTime, money, words } from "./format";
 import { useAction, useLoad } from "./hooks";
+import { PageHeader } from "./PageHeader";
+import { ErrorState, Loading } from "./States";
 
 const STEP_LABELS: Record<Step["kind"], string> = {
   tool_call: "Called",
@@ -122,6 +125,7 @@ function SignOffForm({
 }: Readonly<{ claimId: string; onSignedOff: () => void }>) {
   const { state } = useAuth();
   const action = useAction();
+  const [confirming, setConfirming] = useState(false);
   if (state.status !== "signed-in") return null;
   const { handler } = state;
   if (!handler.can_approve_over_limit) {
@@ -137,10 +141,7 @@ function SignOffForm({
       className="sign-off"
       onSubmit={(event) => {
         event.preventDefault();
-        void action.act(async () => {
-          await api.signOff(claimId);
-          onSignedOff();
-        });
+        setConfirming(true);
       }}
     >
       <p className="note">
@@ -150,6 +151,28 @@ function SignOffForm({
         Sign off
       </button>
       {action.error && <p role="alert">{action.error}</p>}
+      {confirming && (
+        <ConfirmDialog
+          title="Sign off this payout?"
+          confirmLabel="Sign off"
+          busy={action.busy}
+          onConfirm={() => {
+            void action.act(async () => {
+              await api.signOff(claimId);
+              setConfirming(false);
+              onSignedOff();
+            });
+          }}
+          onCancel={() => {
+            setConfirming(false);
+          }}
+        >
+          <p>
+            The payout is paid, and the sign-off is recorded in {handler.name}
+            &apos;s name.
+          </p>
+        </ConfirmDialog>
+      )}
     </form>
   );
 }
@@ -303,8 +326,15 @@ export function ClaimPage({ claimId }: Readonly<{ claimId: string }>) {
   const { data: handlers } = useLoad(api.handlers);
   const run = useAction();
 
-  if (error) return <p role="alert">{error}</p>;
-  if (!data) return <p>Loading the claim...</p>;
+  if (error) {
+    return (
+      <ErrorState
+        message={error}
+        next="Go back to the queue and choose the claim again."
+      />
+    );
+  }
+  if (!data) return <Loading what="the claim" />;
 
   const { claim, policy, steps } = data;
   const runAgent = () =>
@@ -315,32 +345,34 @@ export function ClaimPage({ claimId }: Readonly<{ claimId: string }>) {
 
   return (
     <>
-      <p>
-        {claim.evaluation_id ? (
-          <a href={`#/evaluations/${claim.evaluation_id}`}>
-            Back to the evaluation
-          </a>
-        ) : (
-          <a href="#/">Back to the queue</a>
+      <PageHeader
+        back={
+          claim.evaluation_id ? (
+            <a href={`#/evaluations/${claim.evaluation_id}`}>
+              Back to the evaluation
+            </a>
+          ) : (
+            <a href="#/">Back to the queue</a>
+          )
+        }
+        title={
+          <>
+            <span className="mono">{claim.claim_id}</span> {claim.summary}
+          </>
+        }
+        purpose="The claim, the policy it falls under and the agent's work on it."
+      >
+        <Badge status={claim.status} />
+        {claim.status === "waiting" && !claim.evaluation_id && (
+          <button
+            type="button"
+            onClick={() => void runAgent()}
+            disabled={run.busy}
+          >
+            Run agent
+          </button>
         )}
-      </p>
-      <div className="page-head">
-        <h1>
-          <span className="mono">{claim.claim_id}</span> {claim.summary}
-        </h1>
-        <div className="actions">
-          <Badge status={claim.status} />
-          {claim.status === "waiting" && !claim.evaluation_id && (
-            <button
-              type="button"
-              onClick={() => void runAgent()}
-              disabled={run.busy}
-            >
-              Run agent
-            </button>
-          )}
-        </div>
-      </div>
+      </PageHeader>
       {run.error && <p role="alert">{run.error}</p>}
       {claim.evaluation_id && (
         <p className="note">

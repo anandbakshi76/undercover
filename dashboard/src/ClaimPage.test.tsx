@@ -12,6 +12,7 @@ import { renderSignedIn } from "./signedIn";
 import { dateTime } from "./format";
 import { POLL_MS } from "./hooks";
 import {
+  confirmDialog,
   calls,
   claim,
   Failure,
@@ -155,6 +156,7 @@ it("signs off a payout over the limit and follows it until it is paid", async ()
     screen.getByText("Dana Whitfield", { selector: "strong" }),
   ).toBeDefined();
   fireEvent.click(screen.getByRole("button", { name: "Sign off" }));
+  confirmDialog("Sign off");
   expect(
     await screen.findByText(
       `Payment pending, signed off by Dana Whitfield at ${dateTime(SIGNED_OFF.signed_off_at)}`,
@@ -190,6 +192,7 @@ it("shows the backend's message when sign-off fails", async () => {
   );
   renderSignedIn(<ClaimPage claimId="CLM-1001" />);
   fireEvent.click(await screen.findByRole("button", { name: "Sign off" }));
+  confirmDialog("Sign off");
   expect((await screen.findByRole("alert")).textContent).toBe(
     "Claim CLM-1001 is not waiting for sign-off.",
   );
@@ -218,7 +221,7 @@ it("shows an error when the claim cannot load", async () => {
     }),
   );
   renderSignedIn(<ClaimPage claimId="CLM-1001" />);
-  expect((await screen.findByRole("alert")).textContent).toBe(
+  expect((await screen.findByRole("alert")).textContent).toContain(
     "There is no claim CLM-1001.",
   );
 });

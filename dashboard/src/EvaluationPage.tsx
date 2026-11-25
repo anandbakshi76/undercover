@@ -14,6 +14,8 @@ import {
   yesNo,
 } from "./format";
 import { useLoad } from "./hooks";
+import { PageHeader } from "./PageHeader";
+import { ErrorState, Loading } from "./States";
 
 function Answer({
   answer,
@@ -57,8 +59,15 @@ export function EvaluationPage({ runId }: Readonly<{ runId: string }>) {
     (loaded) => loaded?.status === "running",
   );
 
-  if (error) return <p role="alert">{error}</p>;
-  if (!data) return <p>Loading the evaluation...</p>;
+  if (error) {
+    return (
+      <ErrorState
+        message={error}
+        next="Go back to the scoreboard and choose the evaluation again."
+      />
+    );
+  }
+  if (!data) return <Loading what="the evaluation" />;
 
   const measures: [string, string][] = [
     ["Decision accuracy", percent(data.decision_accuracy)],
@@ -74,18 +83,15 @@ export function EvaluationPage({ runId }: Readonly<{ runId: string }>) {
 
   return (
     <>
-      <p>
-        <a href="#/scoreboard">Back to the scoreboard</a>
-      </p>
-      <div className="page-head">
-        <h1>
-          {SET_LABELS[data.evaluation_set]}
-          {data.tiny ? ", tiny" : ""}
-        </h1>
+      <PageHeader
+        back={<a href="#/scoreboard">Back to the scoreboard</a>}
+        title={`${SET_LABELS[data.evaluation_set]}${data.tiny ? ", tiny" : ""}`}
+        purpose="One evaluation: the claim agent's answers against our handlers' decisions."
+      >
         <span className={`badge run-${data.status}`}>
           {RUN_LABELS[data.status]}
         </span>
-      </div>
+      </PageHeader>
       <p className="note">
         <span className="mono">{data.run_id}</span>, {data.claim_count} claims,{" "}
         {data.concurrency} claim agents at once, model{" "}

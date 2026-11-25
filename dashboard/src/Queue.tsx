@@ -9,7 +9,10 @@ import {
   STATUSES,
   words,
 } from "./format";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { useAction, useLoad } from "./hooks";
+import { PageHeader } from "./PageHeader";
+import { ErrorState, Loading } from "./States";
 
 export const DEFAULT_CONCURRENCY = 3;
 export const MAX_CONCURRENCY = 25;
@@ -28,27 +31,38 @@ export function Queue() {
     ),
   );
   const action = useAction();
+  const [confirming, setConfirming] = useState(false);
 
-  if (error) return <p role="alert">{error}</p>;
-  if (!data) return <p>Loading the queue...</p>;
+  if (error) {
+    return (
+      <ErrorState
+        message={error}
+        next="Check that the backend is running, then reload the page."
+      />
+    );
+  }
+  if (!data) return <Loading what="the queue" />;
 
   const { claims, run } = data;
   const running = run?.status === "running";
   const startDispatch = () =>
     action.act(async () => {
       await api.startDispatch(concurrency);
+      setConfirming(false);
       refresh();
     });
 
   return (
     <>
-      <div className="page-head">
-        <h1>Claims queue</h1>
+      <PageHeader
+        title="Claims queue"
+        purpose="Claims waiting for a decision, and the dispatch that works them."
+      >
         <form
           className="run-form"
           onSubmit={(event) => {
             event.preventDefault();
-            void startDispatch();
+            setConfirming(true);
           }}
         >
           <label htmlFor="concurrency">Claim agents at once</label>
@@ -74,8 +88,24 @@ export function Queue() {
             Start a dispatch
           </button>
         </form>
-      </div>
+      </PageHeader>
       {action.error && <p role="alert">{action.error}</p>}
+      {confirming && (
+        <ConfirmDialog
+          title="Start a dispatch?"
+          confirmLabel="Start the dispatch"
+          busy={action.busy}
+          onConfirm={() => void startDispatch()}
+          onCancel={() => {
+            setConfirming(false);
+          }}
+        >
+          <p>
+            The dispatcher works the waiting claims with {concurrency} claim
+            agents at once, on the current version of the configuration.
+          </p>
+        </ConfirmDialog>
+      )}
       <ul className="counts" aria-label="Claims by state">
         {STATUSES.map((status) => (
           <li key={status} className="panel count">

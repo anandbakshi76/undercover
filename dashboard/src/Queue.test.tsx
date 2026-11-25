@@ -10,6 +10,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { POLL_MS } from "./hooks";
 import { Queue } from "./Queue";
 import {
+  confirmDialog,
   calls,
   Failure,
   mockApi,
@@ -133,6 +134,7 @@ it("starts a dispatch with the number of claim agents from the box", async () =>
     target: { value: "7" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Start a dispatch" }));
+  confirmDialog("Start the dispatch");
   await vi.waitFor(() => {
     expect(calls(fetchMock)).toContain("POST /api/dispatches");
   });
@@ -146,6 +148,7 @@ it("starts with 3 when the box is left alone", async () => {
   fireEvent.click(
     await screen.findByRole("button", { name: "Start a dispatch" }),
   );
+  confirmDialog("Start the dispatch");
   await vi.waitFor(() => {
     const post = fetchMock.mock.calls.find(
       ([, init]) => init?.method === "POST",
@@ -176,6 +179,7 @@ it("shows the refusal when another run is going", async () => {
   fireEvent.click(
     await screen.findByRole("button", { name: "Start a dispatch" }),
   );
+  confirmDialog("Start the dispatch");
   expect((await screen.findByRole("alert")).textContent).toBe(
     "A dispatch or evaluation is already running.",
   );
@@ -191,6 +195,7 @@ it("says when the agent's service isn't running", async () => {
   fireEvent.click(
     await screen.findByRole("button", { name: "Start a dispatch" }),
   );
+  confirmDialog("Start the dispatch");
   expect((await screen.findByRole("alert")).textContent).toBe(
     "The agent isn't running.",
   );
@@ -308,7 +313,35 @@ it("shows an error when the queue cannot load", async () => {
     routes({ "GET /api/claims": new Failure(500, "The backend is down.") }),
   );
   render(<Queue />);
-  expect((await screen.findByRole("alert")).textContent).toBe(
+  expect((await screen.findByRole("alert")).textContent).toContain(
     "The backend is down.",
   );
+});
+
+it("opens a confirmation before a dispatch and calls nothing on Cancel", async () => {
+  const fetchMock = mockApi(routes({ "POST /api/dispatches": run() }));
+  render(<Queue />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Start a dispatch" }),
+  );
+  expect(calls(fetchMock)).not.toContain("POST /api/dispatches");
+  fireEvent.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(calls(fetchMock)).not.toContain("POST /api/dispatches");
+});
+
+it("shows the shared page header and right-aligns the claimed amounts", async () => {
+  mockApi(routes());
+  const { container } = render(<Queue />);
+  expect((await screen.findByRole("heading", { level: 1 })).textContent).toBe(
+    "Claims queue",
+  );
+  expect(container.querySelector(".page-header .purpose")).not.toBeNull();
+  const header = [...container.querySelectorAll("th")].findIndex(
+    (th) => th.textContent === "Claimed",
+  );
+  const cell = container.querySelector("tbody tr")?.children[header];
+  expect(cell?.className).toContain("number");
 });

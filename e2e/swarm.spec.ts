@@ -40,6 +40,10 @@ test("starting a dispatch on the dashboard reaches the agent's service with N", 
   await expect(box).toHaveValue("3");
   await box.fill("7");
   await page.getByRole("button", { name: "Start a dispatch" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Start the dispatch" })
+    .click();
   await expect
     .poll(async () =>
       (await sentToAgent(request)).filter((r) => r.path === "/api/dispatches"),
@@ -132,6 +136,10 @@ test("starting an evaluation on the scoreboard reaches the service with the set,
   await page.getByLabel("Claims", { exact: true }).selectOption("tiny");
   await page.getByLabel("Claim agents at once").fill("5");
   await page.getByRole("button", { name: "Start an evaluation" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Start the evaluation" })
+    .click();
   await expect
     .poll(async () =>
       (await sentToAgent(request)).filter((r) => r.path === "/api/evaluations"),

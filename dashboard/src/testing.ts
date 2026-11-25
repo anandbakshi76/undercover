@@ -1,3 +1,4 @@
+import { fireEvent, screen, within } from "@testing-library/react";
 import { vi } from "vitest";
 import type {
   ConfigDiff,
@@ -405,3 +406,10 @@ export const RECIPES: RecipeVersion[] = [
     is_current: true,
   },
 ];
+
+// Clicks the confirm button of the dashboard's dialog, which opens before an action.
+export function confirmDialog(name: string) {
+  fireEvent.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name }),
+  );
+}

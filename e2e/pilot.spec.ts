@@ -80,6 +80,10 @@ test("a sign-off puts the claim back in progress and tells the agent", async ({
     page.getByText("The payment waits for a handler's sign-off."),
   ).toBeVisible();
   await page.getByRole("button", { name: "Sign off", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Sign off" })
+    .click();
   await expect(page.locator(".actions .badge")).toHaveText("In progress");
   await expect(
     page.getByText(/Payment pending, signed off by Dana Whitfield at /),

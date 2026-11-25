@@ -923,3 +923,8 @@ button.secondary[aria-pressed="true"] {
   border-radius: 4px;
   padding: 8px;
 }
+
+.back {
+  margin: 0 0 4px;
+  font-size: 0.875rem;
+}

@@ -11,6 +11,7 @@ import { EvaluationPage } from "./EvaluationPage";
 import { POLL_MS } from "./hooks";
 import { Scoreboard } from "./Scoreboard";
 import {
+  confirmDialog,
   calls,
   evaluation,
   evaluationClaim,
@@ -112,6 +113,7 @@ it("starts an evaluation with the set, tiny and N from the form", async () => {
     target: { value: "5" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Start an evaluation" }));
+  confirmDialog("Start the evaluation");
   await vi.waitFor(() => {
     expect(calls(fetchMock)).toContain("POST /api/evaluations");
   });
@@ -130,6 +132,7 @@ it("starts the whole evaluation set at 3 by default", async () => {
   fireEvent.click(
     await screen.findByRole("button", { name: "Start an evaluation" }),
   );
+  confirmDialog("Start the evaluation");
   await vi.waitFor(() => {
     const post = fetchMock.mock.calls.find(
       ([, init]) => init?.method === "POST",
@@ -172,6 +175,7 @@ it("shows a refusal, such as the service not running", async () => {
   fireEvent.click(
     await screen.findByRole("button", { name: "Start an evaluation" }),
   );
+  confirmDialog("Start the evaluation");
   expect((await screen.findByRole("alert")).textContent).toBe(
     "The agent isn't running.",
   );
@@ -194,7 +198,7 @@ it("refreshes while an evaluation is running", async () => {
 it("shows an error when the scoreboard cannot load", async () => {
   mockApi({ "GET /api/evaluations": new Failure(500, "The backend is down.") });
   render(<Scoreboard />);
-  expect((await screen.findByRole("alert")).textContent).toBe(
+  expect((await screen.findByRole("alert")).textContent).toContain(
     "The backend is down.",
   );
 });
@@ -280,7 +284,7 @@ it("shows an error when the evaluation cannot load", async () => {
     ),
   });
   render(<EvaluationPage runId="EVAL-9" />);
-  expect((await screen.findByRole("alert")).textContent).toBe(
+  expect((await screen.findByRole("alert")).textContent).toContain(
     "There is no evaluation EVAL-9.",
   );
 });
@@ -346,4 +350,20 @@ it("shows each claim's grade with its two checks as yes or no", async () => {
   expect(bad.getByText("No", { selector: "td" })).toBeDefined();
   expect(bad.getByText("Yes")).toBeDefined();
   expect(within(rows[3]).getByText("Not graded")).toBeDefined();
+});
+
+it("opens a confirmation before an evaluation and calls nothing on Cancel", async () => {
+  const fetchMock = mockApi({
+    "GET /api/evaluations": [],
+    "POST /api/evaluations": evaluation(),
+  });
+  render(<Scoreboard />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Start an evaluation" }),
+  );
+  expect(calls(fetchMock)).not.toContain("POST /api/evaluations");
+  fireEvent.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }),
+  );
+  expect(calls(fetchMock)).not.toContain("POST /api/evaluations");
 });

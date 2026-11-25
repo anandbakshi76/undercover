@@ -44,7 +44,11 @@ export function App() {
         <nav aria-label="Main">
           <a
             href="#/"
-            aria-current={route.page === "queue" ? "page" : undefined}
+            aria-current={
+              route.page === "queue" || route.page === "claim"
+                ? "page"
+                : undefined
+            }
           >
             Queue
           </a>

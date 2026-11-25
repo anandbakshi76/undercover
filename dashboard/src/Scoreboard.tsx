@@ -10,7 +10,10 @@ import {
   RUN_LABELS,
   SET_LABELS,
 } from "./format";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { useAction, useLoad } from "./hooks";
+import { PageHeader } from "./PageHeader";
+import { Empty, ErrorState, Loading } from "./States";
 import { DEFAULT_CONCURRENCY, MAX_CONCURRENCY } from "./Queue";
 
 export function Scoreboard() {
@@ -22,27 +25,37 @@ export function Scoreboard() {
     Boolean(loaded?.some((item) => item.status === "running")),
   );
   const action = useAction();
+  const [confirming, setConfirming] = useState(false);
 
-  if (error) return <p role="alert">{error}</p>;
-  if (!data) return <p>Loading the scoreboard...</p>;
+  if (error) {
+    return (
+      <ErrorState
+        message={error}
+        next="Check that the backend is running, then reload the page."
+      />
+    );
+  }
+  if (!data) return <Loading what="the scoreboard" />;
 
   const running = data.some((item) => item.status === "running");
   const start = () =>
     action.act(async () => {
       await api.startEvaluation(concurrency, evaluationSet, tiny);
+      setConfirming(false);
       refresh();
     });
 
   return (
     <>
-      <div className="page-head">
-        <h1>Scoreboard</h1>
-      </div>
+      <PageHeader
+        title="Scoreboard"
+        purpose="How often the claim agent agrees with our handlers, what each claim costs and how long it takes."
+      />
       <form
         className="panel eval-form"
         onSubmit={(event) => {
           event.preventDefault();
-          void start();
+          setConfirming(true);
         }}
       >
         <h2>Start an evaluation</h2>
@@ -94,8 +107,28 @@ export function Scoreboard() {
         </div>
       </form>
       {action.error && <p role="alert">{action.error}</p>}
+      {confirming && (
+        <ConfirmDialog
+          title="Start an evaluation?"
+          confirmLabel="Start the evaluation"
+          busy={action.busy}
+          onConfirm={() => void start()}
+          onCancel={() => {
+            setConfirming(false);
+          }}
+        >
+          <p>
+            The claim agent works {tiny ? "5 claims of" : "the whole of"} the{" "}
+            {SET_LABELS[evaluationSet].toLowerCase()} with {concurrency} claim
+            agents at once, on the current version.
+          </p>
+        </ConfirmDialog>
+      )}
       {data.length === 0 ? (
-        <p className="note">There have been no evaluations yet.</p>
+        <Empty
+          title="There have been no evaluations yet."
+          next="Start one above to score the claim agent."
+        />
       ) : (
         <div className="panel table-panel">
           <table aria-label="Evaluations">

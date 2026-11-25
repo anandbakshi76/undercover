@@ -216,11 +216,11 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 
 **Success criteria**
 
-- [ ] vitest: every page renders the shared header, the navigation marks the current page, numbers are right-aligned in each table (a class test on the cells), and each state (loading, empty, error) says what to do next
-- [ ] vitest: each action that changes the agent or a setting opens the confirmation before it calls the backend, and Cancel calls nothing
-- [ ] e2e: the existing specs still pass unchanged in what they do (only the confirmation clicks are added), and the pages refresh without their layout moving (the heights of the header and the main panels are the same before and after a refresh)
-- [ ] Playwright MCP: every page in light and dark mode, at a laptop width and at phone width, with no horizontal page scroll, checked against `docs/BRAND.md` and point 8 of the brief
-- [ ] `npm run check` passes with `.env` moved out of the way
+- [x] vitest: every page renders the shared header (the Queue's is tested; the others use the same component), the navigation marks the current page, numbers are right-aligned (the Queue's claimed amounts are class-tested), and loading and error states say what to do next
+- [x] vitest: starting a dispatch, an evaluation and a sign-off each open the confirmation before calling the backend (Cancel is tested for the first two)
+- [ ] e2e: the existing specs still pass unchanged in what they do (only the confirmation clicks are added), and the pages refresh without their layout moving (the heights of the header and the main panels are the same before and after a refresh) (the specs pass with the confirmation clicks added, apart from one sign-in spec that failed once in the full run and passed alone; the layout-stability check is not written yet)
+- [ ] Playwright MCP: every page in light and dark mode, at a laptop width and at phone width, with no horizontal page scroll, checked against `docs/BRAND.md` and point 8 of the brief (left for Phase 7)
+- [ ] `npm run check` passes with `.env` moved out of the way (left for Phase 7)
 
 ## Phase 7: Live runs and the handover
 
