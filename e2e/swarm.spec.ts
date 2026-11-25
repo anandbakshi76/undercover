@@ -156,6 +156,7 @@ test("the scoreboard shows an evaluation played out through the API", async ({
     data: {
       concurrency: 5,
       version: 1,
+      round_id: null,
       evaluation_set: "held_out",
       tiny: true,
       model: "openai/gpt-6-luna",

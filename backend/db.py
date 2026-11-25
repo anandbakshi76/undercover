@@ -84,6 +84,7 @@ runs = Table(
     Column("model", Text),
     Column("reasoning_effort", Text),
     Column("version", Integer),
+    Column("round_id", Text),
 )
 run_claims = Table(
     "run_claims",
@@ -144,6 +145,54 @@ recipes = Table(
     Column("approved_by", Text, nullable=False),
     Column("approved_at", Text, nullable=False),
     Column("round_id", Text),
+)
+rounds = Table(
+    "rounds",
+    metadata,
+    Column("round_id", Text, primary_key=True),
+    Column("status", Text, nullable=False),
+    Column("stage", Text, nullable=False),
+    Column("progress", Integer, nullable=False, server_default="0"),
+    Column("recipe_version", Integer, nullable=False),
+    Column("settings", Text, nullable=False),
+    Column("start_version", Integer, nullable=False),
+    Column("version_tried", Integer),
+    Column("reason", Text),
+    Column("before_scores", Text),
+    Column("after_scores", Text),
+    Column("verdict", Text),
+    Column("why", Text),
+    Column("started_by", Text, nullable=False),
+    Column("started_at", Text, nullable=False),
+    Column("finished_at", Text),
+    Column("thread_id", Text, nullable=False),
+)
+proposals = Table(
+    "proposals",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("round_id", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("instructions", Text),
+    Column("model", Text),
+    Column("reasoning_effort", Text),
+    Column("recipe", Text),
+    Column("reason", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("created_at", Text, nullable=False),
+    Column("decided_by", Text),
+    Column("decided_at", Text),
+    Column("rejection_reason", Text),
+)
+improver_calls = Table(
+    "improver_calls",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("round_id", Text, nullable=False),
+    Column("created_at", Text, nullable=False),
+    Column("prompt_tokens", Integer, nullable=False),
+    Column("completion_tokens", Integer, nullable=False),
+    Column("cost", Float, nullable=False),
 )
 improvement_state = Table(
     "improvement_state",

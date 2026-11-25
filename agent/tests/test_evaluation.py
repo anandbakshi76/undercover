@@ -14,6 +14,7 @@ def create(evaluation_set="held_out", tiny=True, concurrency=5):
         "evaluation_set": evaluation_set,
         "tiny": tiny,
         "version": 1,
+        "round_id": None,
         "model": "stub",
         "reasoning_effort": "low",
     }

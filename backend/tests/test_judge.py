@@ -13,6 +13,7 @@ def create(client, tiny=True):
         "tiny": tiny,
         "version": 1,
         "model": "m",
+        "round_id": None,
         "reasoning_effort": "low",
     }
     return client.post("/api/runs/evaluation", json=body).json()

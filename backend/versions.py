@@ -72,8 +72,3 @@ def recipe(connection: Connection, version: int) -> dict[str, Any] | None:
         .first()
     )
     return dict(row) if row else None
-
-
-def scores(connection: Connection, version: int) -> dict[str, Any]:
-    """A version's scores on the evaluation set and the held-out set (none yet)."""
-    return {"evaluation": None, "held_out": None}

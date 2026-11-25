@@ -65,7 +65,7 @@ def test_only_one_dispatch_runs_at_a_time(client):
     first = dispatch(client).json()
     refused = dispatch(client)
     assert refused.status_code == 409
-    assert refused.json()["detail"] == "A dispatch or evaluation is already running."
+    assert refused.json()["detail"] == f"A dispatch ({first['run_id']}) is running."
     finish(client, first["run_id"])
     assert dispatch(client).status_code == 200
 

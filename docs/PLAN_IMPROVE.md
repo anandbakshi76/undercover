@@ -168,20 +168,20 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 
 **Success criteria** (pytest, stub model, stub judge, no network)
 
-- [ ] a version kept and one rolled back by the rule, with measures worked out by hand, cost and time compared as fractions of the old value and accuracy and the grade as differences, and a version with no grade rolled back
-- [ ] a version's scores count only the whole-set evaluations its rounds ran (not a tiny one, not one started on the Scoreboard)
-- [ ] the improver's view holds nothing from the held-out set but its scores, the wrong claims and five weakest right ones come from the latest evaluation-set run, and the handler's reasons are beside the agent's
-- [ ] a proposal changes nothing until it is approved; a rejection's reason reaches the improver, which may propose again; a proposal outside the models allowed goes back to the improver without a pending proposal, and the validation runs before the pause (the middleware order is tested)
-- [ ] an approval or a rejection is refused while a dispatch or an evaluation runs, naming what is running, with nothing recorded; dispatches and evaluations run while a round waits for a handler; a round's own evaluations are not refused
-- [ ] an evaluation refused when its estimate is over what is left of the round's limit, the estimate for a model with no runs scaled by the larger price ratio, and an evaluation cut short by the limit shown as stopped and its version rolled back
-- [ ] a stopped round leaves the current version as it was when stopped before its verdict and keeps it when stopped after, the backend refuses what a stopped round records, and the service starts no more claims for it
-- [ ] a round keeps the settings it started with when the settings change
-- [ ] a round that waits for a handler survives a restart (the improver resumes from its saved thread); a round that was working when the service stopped is marked stopped
-- [ ] a round in which the improver proposes nothing finishes with no version tried
-- [ ] the improver's evaluations don't save into its thread (its checkpoints hold none of the dispatcher's), and its model calls and the judge's calls count against the round's limit
-- [ ] only a senior handler can start or stop a round or approve or reject a proposal (403 for Marcus, 401 with no sign-in), and nothing in the improver's tools can change the objectives, noise, tolerance, spending limit, models allowed, approval limit, evaluation sets or judge
-- [ ] the claim agent still can't reach the scores or the handlers' decisions (the guard test covers every new operation and `agent/improver_api.py` is imported only by `agent/improver.py`)
-- [ ] the openapi guard test passes, and `npm run check:python` passes with coverage of 80% or more
+- [x] a version kept and one rolled back by the rule, with measures worked out by hand, cost and time compared as fractions of the old value and accuracy and the grade as differences, and a version with no grade rolled back
+- [x] a version's scores count only the whole-set evaluations its rounds ran (not a tiny one, not one started on the Scoreboard)
+- [x] the improver's view holds nothing from the held-out set but its scores, the wrong claims and five weakest right ones come from the latest evaluation-set run, and the handler's reasons are beside the agent's
+- [x] a proposal changes nothing until it is approved; a rejection's reason reaches the improver, which may propose again; a proposal outside the models allowed goes back to the improver without a pending proposal, and the validation runs before the pause (the middleware order is tested)
+- [x] an approval or a rejection is refused while a dispatch or an evaluation runs, naming what is running, with nothing recorded; dispatches and evaluations run while a round waits for a handler; a round's own evaluations are not refused
+- [x] an evaluation refused when its estimate is over what is left of the round's limit, the estimate for a model with no runs scaled by the larger price ratio, and an evaluation cut short by the limit shown as stopped and its version rolled back
+- [x] a stopped round leaves the current version as it was when stopped before its verdict and keeps it when stopped after, the backend refuses what a stopped round records, and the service starts no more claims for it
+- [x] a round keeps the settings it started with when the settings change
+- [x] a round that waits for a handler survives a restart (the improver resumes from its saved thread); a round that was working when the service stopped is marked stopped
+- [x] a round in which the improver proposes nothing finishes with no version tried
+- [x] the improver's evaluations don't save into its thread (its checkpoints hold none of the dispatcher's), and its model calls and the judge's calls count against the round's limit
+- [x] only a senior handler can start or stop a round or approve or reject a proposal (403 for Marcus, 401 with no sign-in), and nothing in the improver's tools can change the objectives, noise, tolerance, spending limit, models allowed, approval limit, evaluation sets or judge
+- [x] the claim agent still can't reach the scores or the handlers' decisions (the guard test covers every new operation and `agent/improver_api.py` is imported only by `agent/improver.py`)
+- [x] the openapi guard test passes, and `npm run check:python` passes with coverage of 80% or more
 
 ## Phase 5: The Improvement page
 

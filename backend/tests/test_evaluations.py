@@ -15,6 +15,7 @@ def create(client, evaluation_set="evaluation", tiny=False, concurrency=3, model
         "tiny": tiny,
         "model": model,
         "version": 1,
+        "round_id": None,
         "reasoning_effort": "low",
     }
     return client.post("/api/runs/evaluation", json=body)

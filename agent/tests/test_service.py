@@ -151,10 +151,10 @@ def test_another_model_is_recorded_with_no_effort(monkeypatch, service_client):
 
 
 def test_a_second_start_is_refused_while_one_is_running(service_client):
-    new_dispatch()
+    running = new_dispatch()
     refused = service_client.post("/api/dispatches", json={"concurrency": 3})
     assert refused.status_code == 409
-    assert refused.json()["detail"] == "A dispatch or evaluation is already running."
+    assert refused.json()["detail"] == f"A dispatch ({running}) is running."
 
 
 def test_n_must_be_from_one_to_twenty_five(service_client):

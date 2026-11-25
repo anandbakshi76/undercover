@@ -16,6 +16,7 @@ from backend import (
     auth,
     db,
     documents,
+    improvement,
     judge,
     payout,
     scoring,
@@ -28,10 +29,14 @@ from backend.db import (
     eval_claims,
     eval_decisions,
     grades,
+    improvement_state,
+    improver_calls,
     model_calls,
     platform_settings,
+    proposals,
     recipes,
     records,
+    rounds,
     run_claims,
     runs,
     setting_changes,
@@ -472,7 +477,12 @@ def sign_off(
 
 
 MAX_ATTEMPTS = 2
-RUN_KINDS = ["dispatch", "evaluation"]
+RUN_KINDS = ["dispatch", "evaluation", "improver"]
+RUNNING = {
+    "dispatch": "A dispatch",
+    "evaluation": "An evaluation",
+    "improver": "The improver",
+}
 
 
 class NewDispatch(BaseModel):
@@ -504,6 +514,7 @@ class NewEvaluation(BaseModel):
     evaluation_set: EvaluationSet
     tiny: bool
     version: int = Field(ge=1)
+    round_id: str | None
     model: str = Field(min_length=1)
     reasoning_effort: str = Field(min_length=1)
 
@@ -611,6 +622,7 @@ def run_view(connection: Connection, run_id: str) -> dict[str, Any]:
         "model": row["model"],
         "reasoning_effort": row["reasoning_effort"],
         "version": row["version"],
+        "round_id": row["round_id"],
         "evaluation_set": row["evaluation_set"],
         "tiny": None if row["tiny"] is None else bool(row["tiny"]),
         "claims_worked": [item["claim_id"] for item in worked],
@@ -623,6 +635,26 @@ def run_view(connection: Connection, run_id: str) -> dict[str, Any]:
     }
 
 
+def refuse_if_busy(connection: Connection, kind: str, round_id: str | None) -> None:
+    """Refuse a new run while another is going, naming it, as only one runs at a time.
+
+    A round's own evaluations are part of the improver's stretch of work.
+    """
+    going = connection.execute(
+        select(runs.c.run_id, runs.c.kind, runs.c.round_id).where(
+            runs.c.kind.in_(RUN_KINDS), runs.c.status == "running"
+        )
+    ).all()
+    if kind == "evaluation" and round_id:
+        going = [
+            r for r in going if not (r.kind == "improver" and r.round_id == round_id)
+        ]
+    if going:
+        raise HTTPException(
+            409, f"{RUNNING[going[0].kind]} ({going[0].run_id}) is running."
+        )
+
+
 def new_run(
     connection: Connection,
     kind: str,
@@ -633,15 +665,8 @@ def new_run(
     version = options.pop("version", None)
     model = options.pop("model", "")
     reasoning_effort = options.pop("reasoning_effort", "")
-    if (
-        kind in RUN_KINDS
-        and connection.execute(
-            select(runs.c.id).where(
-                runs.c.kind.in_(RUN_KINDS), runs.c.status == "running"
-            )
-        ).first()
-    ):
-        raise HTTPException(409, "A dispatch or evaluation is already running.")
+    if kind in RUN_KINDS:
+        refuse_if_busy(connection, kind, options.get("round_id"))
     version = version or versions.current(connection)
     config = versions.configuration(connection, version)
     if config is None:
@@ -683,6 +708,8 @@ def start(connection: Connection, run_id: str, claim_id: str) -> None:
     run = run_row(connection, run_id)
     if run["status"] != "running":
         raise HTTPException(409, f"Run {run_id} has finished.")
+    if run["round_id"]:
+        round_allows_claims(connection, run["round_id"])
     row = claim_row(connection, claim_id)
     if row["status"] == "in_progress":
         join_run(connection, run_id, claim_id)
@@ -783,6 +810,7 @@ def create_evaluation(new: NewEvaluation) -> dict[str, Any]:
             reasoning_effort=new.reasoning_effort,
             evaluation_set=new.evaluation_set,
             tiny=int(new.tiny),
+            round_id=new.round_id,
         )
         wanted = select(eval_claims.c.claim_id, eval_claims.c.data).where(
             eval_claims.c.eval_set == new.evaluation_set
@@ -967,7 +995,7 @@ def start_evaluation(evaluation: EvaluationStart) -> dict[str, Any]:
 
 @app.post("/api/runs/stop-running", operation_id="stop_running_runs")
 def stop_running_runs() -> list[str]:
-    """Mark every dispatch or evaluation still running as stopped."""
+    """Mark every dispatch, evaluation and improver stretch still running as stopped."""
     with db.connect() as connection:
         ids = list(
             connection.execute(
@@ -978,6 +1006,11 @@ def stop_running_runs() -> list[str]:
         )
         for run_id in ids:
             end_run(connection, run_id, "stopped")
+        connection.execute(
+            update(rounds)
+            .where(rounds.c.status == "working")
+            .values(status="stopped", stage="stopped", finished_at=now_ms())
+        )
     return ids
 
 
@@ -1046,14 +1079,15 @@ def finish_run(run_id: str, end: RunEnd) -> dict[str, Any]:
     """Record that a run has finished or failed, grading an evaluation's claims."""
     with db.connect() as connection:
         run = run_row(connection, run_id)
+        status = "stopped" if cut_short(connection, run, end.status) else end.status
         grading = (
-            run["kind"] == "evaluation" and end.status == "finished" and judge.enabled()
+            run["kind"] == "evaluation" and status == "finished" and judge.enabled()
         )
         items = judge_items(connection, run) if grading else []
     results = judge.grade_all(items)
     with db.connect() as connection:
         store_grades(connection, run_id, results)
-        end_run(connection, run_id, end.status)
+        end_run(connection, run_id, status)
         return run_view(connection, run_id)
 
 
@@ -1205,7 +1239,7 @@ def list_configurations() -> list[dict[str, Any]]:
         )
         return [
             version_view(dict(row), current)
-            | {"scores": versions.scores(connection, row["version"])}
+            | {"scores": version_scores(connection, row["version"])}
             for row in rows
         ]
 
@@ -1282,6 +1316,16 @@ def list_recipes() -> list[dict[str, Any]]:
     ]
 
 
+@app.get("/api/recipes/{version}", operation_id="get_recipe")
+def get_recipe(version: int) -> dict[str, Any]:
+    """Get one version of the improver's recipe, with its text."""
+    with db.connect() as connection:
+        found = versions.recipe(connection, version)
+    if found is None:
+        raise HTTPException(404, f"There is no version {version} of the recipe.")
+    return {"version": found["version"], "recipe": found["recipe"]}
+
+
 @app.get("/api/recipes/{version}/diff", operation_id="get_recipe_diff")
 def get_recipe_diff(version: int) -> dict[str, Any]:
     """Show what a version of the recipe changed from the one before."""
@@ -1301,3 +1345,817 @@ def get_recipe_diff(version: int) -> dict[str, Any]:
             before["recipe"] if before else found["recipe"], found["recipe"]
         ),
     }
+
+
+# The improver: rounds, proposals, spending and the verdict.
+
+ROUND_OPEN = ["working", "waiting"]
+FIRST_RUNS = {"evaluation": 1, "held_out": 2}
+YES = 0.5
+STAGES = Literal[
+    "first_evaluations",
+    "improver_working",
+    "change_waiting",
+    "evaluating",
+    "verdict",
+    "recipe_waiting",
+    "finished",
+    "stopped",
+]
+
+
+class NewRound(BaseModel):
+    started_by: str
+
+
+class StageChange(BaseModel):
+    stage: STAGES
+    progress: int = Field(ge=0, le=3)
+
+
+class ChangeProposal(BaseModel):
+    instructions: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+    reasoning_effort: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
+class RecipeProposal(BaseModel):
+    recipe: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
+class ProposalDecision(BaseModel):
+    decision: Literal["approve", "reject"]
+    handler_id: str
+    reason: str
+
+
+class Rejection(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class ImproverCall(BaseModel):
+    prompt_tokens: int = Field(ge=0)
+    completion_tokens: int = Field(ge=0)
+    cost: float = Field(ge=0)
+
+
+def round_row(connection: Connection, round_id: str) -> Row:
+    row = (
+        connection.execute(select(rounds).where(rounds.c.round_id == round_id))
+        .mappings()
+        .first()
+    )
+    if row is None:
+        raise HTTPException(404, f"There is no round {round_id}.")
+    return row
+
+
+def round_spent(connection: Connection, round_id: str) -> float:
+    """What the round has spent: the improver's calls, its evaluations and the judge."""
+    calls = connection.execute(
+        select(func.coalesce(func.sum(improver_calls.c.cost), 0.0)).where(
+            improver_calls.c.round_id == round_id
+        )
+    ).scalar()
+    run_ids = select(runs.c.run_id).where(
+        runs.c.round_id == round_id, runs.c.kind == "evaluation"
+    )
+    claims_cost = connection.execute(
+        select(func.coalesce(func.sum(model_calls.c.cost), 0.0)).where(
+            model_calls.c.run_id.in_(run_ids)
+        )
+    ).scalar()
+    judged = connection.execute(
+        select(func.coalesce(func.sum(grades.c.judge_cost), 0.0)).where(
+            grades.c.run_id.in_(run_ids)
+        )
+    ).scalar()
+    return float(calls or 0) + float(claims_cost or 0) + float(judged or 0)
+
+
+def round_allows_claims(connection: Connection, round_id: str) -> None:
+    """Refuse a new claim in a round's evaluation once it has stopped or overspent."""
+    row = round_row(connection, round_id)
+    if row["status"] == "stopped":
+        raise HTTPException(409, f"Round {round_id} has been stopped.")
+    limit = json.loads(row["settings"])["round_limit"]
+    if round_spent(connection, round_id) >= limit:
+        raise HTTPException(
+            409, f"Round {round_id} has spent its limit of {money(limit)}."
+        )
+
+
+def cut_short(connection: Connection, run: Row, status: str) -> bool:
+    """Say whether a round's evaluation was cut short by the limit or a stop."""
+    if status != "finished" or not run["round_id"] or run["kind"] != "evaluation":
+        return False
+    row = round_row(connection, run["round_id"])
+    undecided = connection.execute(
+        select(claims.c.claim_id).where(
+            claims.c.evaluation_id == run["run_id"], claims.c.decision.is_(None)
+        )
+    ).first()
+    limit = json.loads(row["settings"])["round_limit"]
+    spent = round_spent(connection, run["round_id"])
+    return undecided is not None and (row["status"] == "stopped" or spent >= limit)
+
+
+def whole_set_runs(connection: Connection, version: int) -> dict[str, list[str]]:
+    """The finished whole-set evaluations that rounds ran on a version, by set."""
+    found: dict[str, list[str]] = {"evaluation": [], "held_out": []}
+    rows = connection.execute(
+        select(runs.c.run_id, runs.c.evaluation_set)
+        .where(
+            runs.c.kind == "evaluation",
+            runs.c.status == "finished",
+            runs.c.tiny == 0,
+            runs.c.round_id.is_not(None),
+            runs.c.version == version,
+        )
+        .order_by(runs.c.id)
+    ).all()
+    for run_id, evaluation_set in rows:
+        found[evaluation_set].append(run_id)
+    return found
+
+
+def run_scores(connection: Connection, run_id: str) -> dict[str, Any]:
+    view = evaluation_view(connection, run_id, False)
+    return {name: view[name] for name in improvement.MEASURES}
+
+
+def version_scores(connection: Connection, version: int) -> dict[str, Any]:
+    """A version's scores: the averages of the whole-set evaluations its rounds ran."""
+    found = whole_set_runs(connection, version)
+    return {
+        name: improvement.average([run_scores(connection, run_id) for run_id in ids])
+        if ids
+        else None
+        for name, ids in found.items()
+    }
+
+
+def evaluations_needed(connection: Connection, version: int) -> dict[str, int]:
+    """How many first evaluations a version still needs on each set."""
+    found = whole_set_runs(connection, version)
+    return {name: max(FIRST_RUNS[name] - len(found[name]), 0) for name in FIRST_RUNS}
+
+
+def proposal_view(
+    connection: Connection, row: Row, start_version: int, recipe_version: int
+) -> dict[str, Any]:
+    view = {
+        "id": row["id"],
+        "kind": row["kind"],
+        "reason": row["reason"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "decided_by": handler_name(connection, row["decided_by"]),
+        "decided_at": row["decided_at"],
+        "rejection_reason": row["rejection_reason"],
+    }
+    if row["kind"] == "change":
+        before = versions.configuration(connection, start_version) or {}
+        return view | {
+            "model": {"before": before.get("model"), "after": row["model"]},
+            "reasoning_effort": {
+                "before": before.get("reasoning_effort"),
+                "after": row["reasoning_effort"],
+            },
+            "diff": versions.diff_lines(
+                before.get("instructions", ""), row["instructions"]
+            ),
+        }
+    before = versions.recipe(connection, recipe_version) or {}
+    return view | {"diff": versions.diff_lines(before.get("recipe", ""), row["recipe"])}
+
+
+def round_view(connection: Connection, round_id: str) -> dict[str, Any]:
+    row = round_row(connection, round_id)
+    saved = json.loads(row["settings"])
+    found = (
+        connection.execute(
+            select(proposals)
+            .where(proposals.c.round_id == round_id)
+            .order_by(proposals.c.id)
+        )
+        .mappings()
+        .all()
+    )
+    listed = [
+        proposal_view(connection, item, row["start_version"], row["recipe_version"])
+        for item in found
+    ]
+    return {
+        "round_id": round_id,
+        "status": row["status"],
+        "stage": row["stage"],
+        "progress": row["progress"],
+        "recipe_version": row["recipe_version"],
+        "settings": {
+            key: saved[key]
+            for key in ["objectives", "noise", "tolerance", "round_limit"]
+        }
+        | {"improver_concurrency": saved["improver_concurrency"]},
+        "start_version": row["start_version"],
+        "version_tried": row["version_tried"],
+        "reason": row["reason"],
+        "before": json.loads(row["before_scores"]) if row["before_scores"] else None,
+        "after": json.loads(row["after_scores"]) if row["after_scores"] else None,
+        "verdict": row["verdict"],
+        "why": row["why"],
+        "started_by": handler_name(connection, row["started_by"]),
+        "started_at": row["started_at"],
+        "finished_at": row["finished_at"],
+        "spent": round_spent(connection, round_id),
+        "limit": saved["round_limit"],
+        "proposals": listed,
+        "pending": next((item for item in listed if item["status"] == "pending"), None),
+        "evaluations_needed": evaluations_needed(connection, row["start_version"]),
+        "thread_id": row["thread_id"],
+    }
+
+
+@app.get("/api/rounds", operation_id="list_rounds")
+def list_rounds() -> list[dict[str, Any]]:
+    """List the improver's rounds, newest first."""
+    with db.connect() as connection:
+        ids = list(
+            connection.execute(
+                select(rounds.c.round_id).order_by(rounds.c.started_at.desc())
+            ).scalars()
+        )
+        return [round_view(connection, round_id) for round_id in ids]
+
+
+@app.get("/api/rounds/{round_id}", operation_id="get_round")
+def get_round(round_id: str) -> dict[str, Any]:
+    """Get a round with its stage, its proposals, its scores and what it has spent."""
+    with db.connect() as connection:
+        return round_view(connection, round_id)
+
+
+@app.post("/api/rounds", operation_id="start_round")
+def start_round(handler: auth.Senior) -> dict[str, Any]:
+    """Ask the agent's service to start a round of the improver, as a senior handler."""
+    return agent_service.forward("/api/rounds", {"started_by": handler["handler_id"]})
+
+
+@app.post("/api/rounds/create", operation_id="create_round")
+def create_round(new: NewRound) -> dict[str, Any]:
+    """Create a round and its first stretch of work, refused while anything is open."""
+    with db.connect() as connection:
+        if connection.execute(
+            select(rounds.c.round_id).where(rounds.c.status.in_(ROUND_OPEN))
+        ).first():
+            raise HTTPException(409, "A round is already open.")
+        round_id = f"ROUND-{uuid4().hex[:8]}"
+        stretch_id = new_run(connection, "improver", 1, round_id=round_id)
+        current = versions.current(connection)
+        connection.execute(
+            insert(rounds).values(
+                round_id=round_id,
+                status="working",
+                stage="improver_working",
+                recipe_version=versions.current(connection, "current_recipe"),
+                settings=json.dumps(settings.read_all(connection)),
+                start_version=current,
+                started_by=new.started_by,
+                started_at=now_ms(),
+                thread_id=f"{round_id}-{uuid4().hex[:8]}",
+            )
+        )
+        return round_view(connection, round_id) | {"stretch_id": stretch_id}
+
+
+@app.post("/api/rounds/{round_id}/stretches", operation_id="begin_stretch")
+def begin_stretch(round_id: str) -> dict[str, str]:
+    """Begin a new stretch of the improver's work on a round that was waiting."""
+    with db.connect() as connection:
+        row = round_row(connection, round_id)
+        if row["status"] != "waiting":
+            raise HTTPException(409, f"Round {round_id} is not waiting for a handler.")
+        stretch_id = new_run(connection, "improver", 1, round_id=round_id)
+        connection.execute(
+            update(rounds).where(rounds.c.round_id == round_id).values(status="working")
+        )
+    return {"stretch_id": stretch_id}
+
+
+def working_round(connection: Connection, round_id: str) -> Row:
+    row = round_row(connection, round_id)
+    if row["status"] != "working":
+        raise HTTPException(409, f"Round {round_id} is {row['status']}.")
+    return row
+
+
+@app.put("/api/rounds/{round_id}/stage", operation_id="set_round_stage")
+def set_round_stage(round_id: str, change: StageChange) -> dict[str, Any]:
+    """Record where a round has got to."""
+    with db.connect() as connection:
+        working_round(connection, round_id)
+        connection.execute(
+            update(rounds)
+            .where(rounds.c.round_id == round_id)
+            .values(stage=change.stage, progress=change.progress)
+        )
+        return round_view(connection, round_id)
+
+
+def pending_proposal(connection: Connection, round_id: str, **values: Any) -> int:
+    result = connection.execute(
+        insert(proposals).values(
+            round_id=round_id, status="pending", created_at=now_ms(), **values
+        )
+    )
+    return int(result.inserted_primary_key[0])  # pyright: ignore[reportOptionalSubscript]
+
+
+@app.post(
+    "/api/rounds/{round_id}/change-proposals", operation_id="record_change_proposal"
+)
+def record_change_proposal(round_id: str, proposal: ChangeProposal) -> dict[str, Any]:
+    """Record a change the improver proposes, and wait for a handler."""
+    allowed = {m["model"]: m["reasoning_efforts"] for m in versions.models_allowed()}
+    if proposal.reasoning_effort not in allowed.get(proposal.model, []):
+        raise HTTPException(
+            422, f"{proposal.model} at {proposal.reasoning_effort} isn't allowed."
+        )
+    with db.connect() as connection:
+        working_round(connection, round_id)
+        pending_proposal(connection, round_id, kind="change", **proposal.model_dump())
+        connection.execute(
+            update(rounds)
+            .where(rounds.c.round_id == round_id)
+            .values(status="waiting", stage="change_waiting", progress=0)
+        )
+        return round_view(connection, round_id)
+
+
+@app.post(
+    "/api/rounds/{round_id}/recipe-proposals", operation_id="record_recipe_proposal"
+)
+def record_recipe_proposal(round_id: str, proposal: RecipeProposal) -> dict[str, Any]:
+    """Record a recipe the improver proposes, and wait for a handler."""
+    with db.connect() as connection:
+        working_round(connection, round_id)
+        pending_proposal(connection, round_id, kind="recipe", **proposal.model_dump())
+        connection.execute(
+            update(rounds)
+            .where(rounds.c.round_id == round_id)
+            .values(status="waiting", stage="recipe_waiting", progress=0)
+        )
+        return round_view(connection, round_id)
+
+
+@app.post(
+    "/api/proposals/{proposal_id}/decision", operation_id="record_proposal_decision"
+)
+def record_proposal_decision(
+    proposal_id: int, decision: ProposalDecision
+) -> dict[str, Any]:
+    """Record a handler's decision on a proposal, making its version if approved."""
+    with db.connect() as connection:
+        found = (
+            connection.execute(select(proposals).where(proposals.c.id == proposal_id))
+            .mappings()
+            .first()
+        )
+        if found is None:
+            raise HTTPException(404, f"There is no proposal {proposal_id}.")
+        row = round_row(connection, found["round_id"])
+        if row["status"] not in ROUND_OPEN:
+            raise HTTPException(409, f"Round {row['round_id']} is {row['status']}.")
+        if found["status"] != "pending":
+            raise HTTPException(409, f"Proposal {proposal_id} has been decided.")
+        approved = decision.decision == "approve"
+        name = record(connection, "handler", decision.handler_id)["name"]
+        when = now_ms()
+        connection.execute(
+            update(proposals)
+            .where(proposals.c.id == proposal_id)
+            .values(
+                status="approved" if approved else "rejected",
+                decided_by=decision.handler_id,
+                decided_at=when,
+                rejection_reason=None if approved else decision.reason,
+            )
+        )
+        stage = "improver_working"
+        if approved:
+            stage = make_version(connection, found, row, name, when)
+        connection.execute(
+            update(rounds)
+            .where(rounds.c.round_id == row["round_id"])
+            .values(stage=stage, progress=0)
+        )
+        return round_view(connection, row["round_id"])
+
+
+def make_version(
+    connection: Connection, proposal: Row, row: Row, approver: str, when: str
+) -> str:
+    """Make the version or recipe a proposal asked for, and return the next stage."""
+    if proposal["kind"] == "recipe":
+        version = (
+            connection.execute(select(func.max(recipes.c.version))).scalar_one() + 1
+        )
+        connection.execute(
+            insert(recipes).values(
+                version=version,
+                recipe=proposal["recipe"],
+                reason=proposal["reason"],
+                proposed_by="The improver",
+                approved_by=approver,
+                approved_at=when,
+                round_id=row["round_id"],
+            )
+        )
+        connection.execute(
+            update(improvement_state)
+            .where(improvement_state.c.key == "current_recipe")
+            .values(value=version)
+        )
+        return "improver_working"
+    version = (
+        connection.execute(select(func.max(configurations.c.version))).scalar_one() + 1
+    )
+    connection.execute(
+        insert(configurations).values(
+            version=version,
+            instructions=proposal["instructions"],
+            model=proposal["model"],
+            reasoning_effort=proposal["reasoning_effort"],
+            reason=proposal["reason"],
+            proposed_by="The improver",
+            approved_by=approver,
+            approved_at=when,
+            round_id=row["round_id"],
+        )
+    )
+    before = version_scores(connection, row["start_version"])["held_out"]
+    connection.execute(
+        update(rounds)
+        .where(rounds.c.round_id == row["round_id"])
+        .values(
+            version_tried=version,
+            reason=proposal["reason"],
+            before_scores=json.dumps(before),
+        )
+    )
+    return "evaluating"
+
+
+def proposal_round(proposal_id: int) -> str:
+    """The round a proposal belongs to."""
+    with db.connect() as connection:
+        found = connection.execute(
+            select(proposals.c.round_id).where(proposals.c.id == proposal_id)
+        ).scalar()
+    if found is None:
+        raise HTTPException(404, f"There is no proposal {proposal_id}.")
+    return found
+
+
+@app.post("/api/proposals/{proposal_id}/approve", operation_id="approve_proposal")
+def approve_proposal(proposal_id: int, handler: auth.Senior) -> dict[str, Any]:
+    """Ask the agent's service to approve a proposal, as a senior handler."""
+    return agent_service.forward(
+        f"/api/proposals/{proposal_id}/approve",
+        {
+            "handler_id": handler["handler_id"],
+            "round_id": proposal_round(proposal_id),
+            "reason": "",
+        },
+    )
+
+
+@app.post("/api/proposals/{proposal_id}/reject", operation_id="reject_proposal")
+def reject_proposal(
+    proposal_id: int, rejection: Rejection, handler: auth.Senior
+) -> dict[str, Any]:
+    """Ask the agent's service to reject a proposal, with the handler's reason."""
+    return agent_service.forward(
+        f"/api/proposals/{proposal_id}/reject",
+        {
+            "handler_id": handler["handler_id"],
+            "round_id": proposal_round(proposal_id),
+            "reason": rejection.reason,
+        },
+    )
+
+
+@app.post("/api/rounds/{round_id}/stop", operation_id="stop_round")
+def stop_round(round_id: str, handler: auth.Senior) -> dict[str, Any]:
+    """Stop an open round as a senior handler, and tell the agent's service."""
+    with db.connect() as connection:
+        row = round_row(connection, round_id)
+        if row["status"] not in ROUND_OPEN:
+            raise HTTPException(409, f"Round {round_id} is not open.")
+        connection.execute(
+            update(rounds)
+            .where(rounds.c.round_id == round_id)
+            .values(status="stopped", stage="stopped", finished_at=now_ms())
+        )
+        connection.execute(
+            update(proposals)
+            .where(proposals.c.round_id == round_id, proposals.c.status == "pending")
+            .values(status="withdrawn")
+        )
+        view = round_view(connection, round_id)
+    agent_service.forward(f"/api/rounds/{round_id}/stop")
+    return view
+
+
+@app.post("/api/rounds/{round_id}/model-calls", operation_id="record_improver_call")
+def record_improver_call(round_id: str, call: ImproverCall) -> dict[str, str]:
+    """Record the tokens and cost of one of the improver's model calls."""
+    with db.connect() as connection:
+        working_round(connection, round_id)
+        connection.execute(
+            insert(improver_calls).values(
+                round_id=round_id, created_at=now_ms(), **call.model_dump()
+            )
+        )
+    return {"status": "recorded"}
+
+
+def max_cost_per_claim(connection: Connection, model: str) -> float | None:
+    """The highest cost a claim has had in an evaluation run on a model."""
+    found = connection.execute(
+        select(runs.c.run_id).where(runs.c.kind == "evaluation", runs.c.model == model)
+    ).scalars()
+    highest = None
+    for run_id in list(found):
+        copies = connection.execute(
+            select(func.count())
+            .select_from(run_claims)
+            .where(run_claims.c.run_id == run_id)
+        ).scalar_one()
+        total = connection.execute(
+            select(func.coalesce(func.sum(model_calls.c.cost), 0.0)).where(
+                model_calls.c.run_id == run_id
+            )
+        ).scalar_one()
+        if copies:
+            highest = max(highest or 0.0, total / copies)
+    return highest
+
+
+def cost_per_claim_estimate(connection: Connection, version: int) -> float:
+    """The most a claim is likely to cost on a version's model."""
+    config = version_or_404(connection, version)
+    seen = max_cost_per_claim(connection, config["model"])
+    if seen is not None:
+        return seen
+    now = versions.configuration(connection, versions.current(connection)) or config
+    baseline = max_cost_per_claim(connection, now["model"]) or 0.0
+    prices = {m["model"]: m for m in versions.models_allowed()}
+    here, there = prices.get(now["model"]), prices.get(config["model"])
+    if not here or not there or not here["input_price"] or not here["output_price"]:
+        return baseline
+    ratio = max(
+        there["input_price"] / here["input_price"],
+        there["output_price"] / here["output_price"],
+    )
+    return baseline * ratio
+
+
+@app.get(
+    "/api/rounds/{round_id}/estimates/{version}", operation_id="estimate_evaluation"
+)
+def estimate_evaluation(round_id: str, version: int) -> dict[str, Any]:
+    """Estimate what a version's three evaluations will cost, beside what is left."""
+    with db.connect() as connection:
+        row = round_row(connection, round_id)
+        left = json.loads(row["settings"])["round_limit"] - round_spent(
+            connection, round_id
+        )
+        claims_in_set = connection.execute(
+            select(func.count())
+            .select_from(eval_claims)
+            .where(eval_claims.c.eval_set == "held_out")
+        ).scalar_one()
+        each = claims_in_set * cost_per_claim_estimate(connection, version)
+    return {"evaluations": 3, "each": each, "estimate": 3 * each, "left": left}
+
+
+def held_out_runs(connection: Connection, round_id: str, version: int) -> list[Any]:
+    return list(
+        connection.execute(
+            select(runs.c.run_id, runs.c.evaluation_set, runs.c.status)
+            .where(
+                runs.c.round_id == round_id,
+                runs.c.kind == "evaluation",
+                runs.c.version == version,
+                runs.c.tiny == 0,
+            )
+            .order_by(runs.c.id)
+        ).all()
+    )
+
+
+def roll_back(why: str) -> dict[str, Any]:
+    return {"verdict": "rolled_back", "why": why}
+
+
+def verdict_for(connection: Connection, row: Row) -> tuple[dict[str, Any], Any]:
+    """Keep or roll back the version a round tried, by the rule and its settings."""
+    version = row["version_tried"]
+    found = held_out_runs(connection, row["round_id"], version)
+    done = [r for r in found if r.status == "finished"]
+    sets = [r.evaluation_set for r in done]
+    if sets.count("evaluation") < FIRST_RUNS["evaluation"] or (
+        sets.count("held_out") < FIRST_RUNS["held_out"]
+    ):
+        return roll_back("its evaluations were stopped or never finished"), None
+    held = improvement.average(
+        [
+            run_scores(connection, r.run_id)
+            for r in done
+            if r.evaluation_set == "held_out"
+        ]
+    )
+    before = json.loads(row["before_scores"]) if row["before_scores"] else None
+    if before is None:
+        return roll_back("there were no scores to compare it with"), held
+    kept, why = improvement.keep_or_roll_back(held, before, json.loads(row["settings"]))
+    return {"verdict": "kept" if kept else "rolled_back", "why": why}, held
+
+
+def conclude(connection: Connection, row: Row, unfinished: str | None = None) -> None:
+    """Record a round's verdict, and make a kept version the current one."""
+    if unfinished:
+        result, held = roll_back(unfinished), None
+    else:
+        result, held = verdict_for(connection, row)
+    connection.execute(
+        update(rounds)
+        .where(rounds.c.round_id == row["round_id"])
+        .values(
+            verdict=result["verdict"],
+            why=result["why"],
+            after_scores=json.dumps(held) if held else None,
+            stage="verdict",
+            progress=0,
+        )
+    )
+    if result["verdict"] == "kept":
+        connection.execute(
+            update(improvement_state)
+            .where(improvement_state.c.key == "current_version")
+            .values(value=row["version_tried"])
+        )
+
+
+@app.post("/api/rounds/{round_id}/verdict", operation_id="conclude_round")
+def conclude_round(round_id: str) -> dict[str, Any]:
+    """Keep or roll back the version a round tried, by the business's rule."""
+    with db.connect() as connection:
+        row = working_round(connection, round_id)
+        if row["version_tried"] is None or row["verdict"] is not None:
+            raise HTTPException(409, f"Round {round_id} has no version to judge.")
+        conclude(connection, row)
+        return round_view(connection, round_id)
+
+
+@app.post("/api/rounds/{round_id}/finish", operation_id="finish_round")
+def finish_round(round_id: str) -> dict[str, Any]:
+    """Finish a round, rolling back a version it never got to evaluate."""
+    with db.connect() as connection:
+        row = working_round(connection, round_id)
+        if row["version_tried"] is not None and row["verdict"] is None:
+            conclude(
+                connection,
+                row,
+                unfinished="the round could not afford to evaluate it",
+            )
+        connection.execute(
+            update(rounds)
+            .where(rounds.c.round_id == round_id)
+            .values(
+                status="finished", stage="finished", progress=0, finished_at=now_ms()
+            )
+        )
+        return round_view(connection, round_id)
+
+
+def handler_reasons(connection: Connection, evaluation_set: str) -> dict[str, Any]:
+    return {
+        claim_id: json.loads(data)
+        for claim_id, data in connection.execute(
+            select(eval_decisions.c.claim_id, eval_decisions.c.data).where(
+                eval_decisions.c.eval_set == evaluation_set
+            )
+        ).all()
+    }
+
+
+def beside_handler(connection: Connection, run: Row, picked: list[str]) -> list[dict]:
+    """Evaluation-set claims with the agent's answer beside the handler's reason."""
+    key = handler_reasons(connection, "evaluation")
+    summaries = {
+        claim_id: json.loads(data)["summary"]
+        for claim_id, data in connection.execute(
+            select(eval_claims.c.claim_id, eval_claims.c.data).where(
+                eval_claims.c.eval_set == "evaluation"
+            )
+        ).all()
+    }
+    shown = []
+    for item in evaluation_rows(connection, run):
+        if item["claim_id"] not in picked:
+            continue
+        expected = key[item["source_id"]]
+        grade = item["grade"]
+        shown.append(
+            {
+                "claim": item["source_id"],
+                "summary": summaries[item["source_id"]],
+                "agent": item["agent"] | {"rationale": item["reason"]},
+                "handler": {
+                    "decision": expected["decision"],
+                    "payout": expected["payout"],
+                    "reason": expected["reason"],
+                    "reference": expected["reference"],
+                },
+                "judge": grade
+                and {
+                    "grade": round(grade["score"], 2),
+                    "letter": grade["letter"],
+                    "same_grounds": grade["same_grounds"] >= YES,
+                    "same_section": grade["same_section"] >= YES,
+                },
+            }
+        )
+    return shown
+
+
+def evaluation_set_view(connection: Connection, version: int) -> dict[str, Any] | None:
+    """The wrong claims, and the five right ones explained least well."""
+    ids = whole_set_runs(connection, version)["evaluation"]
+    if not ids:
+        return None
+    run = run_row(connection, ids[-1])
+    rows = evaluation_rows(connection, run)
+    wrong = [r["claim_id"] for r in rows if not r["right"]]
+    weakest = sorted(
+        (r for r in rows if r["right"]),
+        key=lambda r: r["grade"]["score"] if r["grade"] else 4.0,
+    )[:5]
+    return {
+        "wrong": beside_handler(connection, run, wrong),
+        "explained_least_well": beside_handler(
+            connection, run, [r["claim_id"] for r in weakest]
+        ),
+    }
+
+
+@app.get("/api/rounds/{round_id}/view", operation_id="get_improver_view")
+def get_improver_view(round_id: str) -> dict[str, Any]:
+    """Get what the improver may see: its version, scores, mistakes and limits."""
+    with db.connect() as connection:
+        row = round_row(connection, round_id)
+        saved = json.loads(row["settings"])
+        current = versions.current(connection)
+        config = versions.configuration(connection, current) or {}
+        earlier = (
+            connection.execute(
+                select(rounds)
+                .where(rounds.c.round_id != round_id, rounds.c.verdict.is_not(None))
+                .order_by(rounds.c.started_at)
+            )
+            .mappings()
+            .all()
+        )
+        return {
+            "current_version": {
+                key: config[key]
+                for key in ["version", "instructions", "model", "reasoning_effort"]
+            },
+            "scores": version_scores(connection, current),
+            "evaluation_set": evaluation_set_view(connection, current),
+            "earlier_rounds": [
+                {
+                    "round": index + 1,
+                    "recipe_version": item["recipe_version"],
+                    "version": item["version_tried"],
+                    "reason": item["reason"],
+                    "verdict": item["verdict"],
+                    "why": item["why"],
+                    "held_out_before": json.loads(item["before_scores"] or "null"),
+                    "held_out_after": json.loads(item["after_scores"] or "null"),
+                }
+                for index, item in enumerate(earlier)
+            ],
+            "objectives_on_the_held_out_set": saved["objectives"],
+            "noise": saved["noise"],
+            "tolerance": saved["tolerance"],
+            "rule": improvement.RULE,
+            "spending_left": round(
+                saved["round_limit"] - round_spent(connection, round_id), 4
+            ),
+            "models_allowed": versions.models_allowed(),
+        }

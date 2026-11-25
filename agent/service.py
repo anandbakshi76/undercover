@@ -1,6 +1,7 @@
 """The agent's service: the agent's entry point, a small web service of its own."""
 
 import asyncio
+import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -8,9 +9,10 @@ from typing import Any, Literal
 
 import httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from agent import claim, dispatcher, main
+from agent import claim, dispatcher, improver, main
 
 BACKEND_WAIT = 30
 
@@ -111,6 +113,7 @@ def run_evaluation(
         evaluation.model_dump()
         | {
             "version": configuration["version"],
+            "round_id": None,
             "model": model,
             "reasoning_effort": effort,
         },
@@ -135,3 +138,80 @@ def resume_claim(claim_id: str, background: BackgroundTasks) -> dict[str, str]:
         raise HTTPException(409, f"Claim {claim_id} is not in progress.")
     background.add_task(claim.carry_on, claim_id)
     return {"status": "resuming"}
+
+
+class Decision(BaseModel):
+    handler_id: str
+    round_id: str
+    reason: str
+
+
+class RoundStart(BaseModel):
+    started_by: str
+
+
+def work_round(round_id: str, stretch_id: str, command: Command | None) -> None:
+    """Work a stretch of a round, then let go of the one-run rule."""
+    status = "finished"
+    try:
+        improver.drive_round(round_id, command)
+    except Exception:
+        status = "failed"
+    main.call("POST", f"/api/runs/{stretch_id}/finish", {"status": status})
+
+
+@app.post("/api/rounds", operation_id="run_round")
+def run_round(round_start: RoundStart, background: BackgroundTasks) -> dict[str, Any]:
+    """Start a round of the improver, and work it."""
+    if os.getenv("MODEL_NAME"):
+        raise HTTPException(409, "Rounds aren't run on a free model.")
+    created = start("POST", "/api/rounds/create", round_start.model_dump())
+    background.add_task(work_round, created["round_id"], created["stretch_id"], None)
+    return created
+
+
+def decide(
+    proposal_id: int, decision: Decision, background: BackgroundTasks, kind: str
+):
+    """Take a stretch, record a handler's decision, and resume the improver."""
+    stretch = start("POST", f"/api/rounds/{decision.round_id}/stretches")
+    body = {
+        "decision": kind,
+        "handler_id": decision.handler_id,
+        "reason": decision.reason,
+    }
+    try:
+        recorded = start("POST", f"/api/proposals/{proposal_id}/decision", body)
+    except HTTPException:
+        main.call(
+            "POST", f"/api/runs/{stretch['stretch_id']}/finish", {"status": "finished"}
+        )
+        raise
+    answer = {"type": "approve"}
+    if kind == "reject":
+        answer = {"type": "reject", "message": decision.reason}
+    resume = Command(resume={"decisions": [answer]})
+    background.add_task(work_round, decision.round_id, stretch["stretch_id"], resume)
+    return recorded
+
+
+@app.post("/api/proposals/{proposal_id}/approve", operation_id="approve_proposal")
+def approve_proposal(
+    proposal_id: int, decision: Decision, background: BackgroundTasks
+) -> dict[str, Any]:
+    """Approve a proposal for a handler, and carry the improver on."""
+    return decide(proposal_id, decision, background, "approve")
+
+
+@app.post("/api/proposals/{proposal_id}/reject", operation_id="reject_proposal")
+def reject_proposal(
+    proposal_id: int, decision: Decision, background: BackgroundTasks
+) -> dict[str, Any]:
+    """Reject a proposal for a handler, with their reason for the improver."""
+    return decide(proposal_id, decision, background, "reject")
+
+
+@app.post("/api/rounds/{round_id}/stop", operation_id="stop_round")
+def stop_round(round_id: str) -> dict[str, str]:
+    """Note that a round was stopped. The backend refuses what it records."""
+    return {"status": "stopped", "round_id": round_id}

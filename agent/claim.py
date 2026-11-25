@@ -405,6 +405,9 @@ def work_thread(
     claim = main.call("GET", f"/api/claims/{claim_id}")
     thread_id = claim["thread_id"]
     configuration = main.call("GET", f"/api/configurations/{claim['version']}")
+    tags = [run_id] if run_id else []
+    if run_id and (round_id := main.call("GET", f"/api/runs/{run_id}")["round_id"]):
+        tags.append(round_id)
     graph = claim_graph(
         llm or main.model(configuration),
         saver or checkpoints.saver(),
@@ -412,14 +415,14 @@ def work_thread(
         run_id,
     )
     config = (
-        main.tracing(thread_id, [run_id] if run_id else None)
+        main.tracing(thread_id, tags or None)
         | {"configurable": {"thread_id": thread_id}}
         | {"recursion_limit": RECURSION_LIMIT}
     )
     problem = "The agent finished without recording a decision."
     started, clock = datetime.now(UTC), time.monotonic()
     try:
-        with main.session(thread_id, [run_id] if run_id else None):
+        with main.session(thread_id, tags or None):
             drive(graph, config, claim)
     except WAIT_AND_CARRY_ON:
         raise

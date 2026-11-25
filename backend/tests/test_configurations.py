@@ -164,7 +164,9 @@ def test_a_dispatch_and_an_evaluation_record_their_version(client):
     client.post(f"/api/runs/{dispatch['run_id']}/finish", json={"status": "finished"})
     evaluation = client.post(
         "/api/runs/evaluation",
-        json=dispatch_body(version=1, evaluation_set="held_out", tiny=True),
+        json=dispatch_body(
+            version=1, evaluation_set="held_out", tiny=True, round_id=None
+        ),
     ).json()
     assert evaluation["version"] == 1
     shown = client.get(f"/api/evaluations/{evaluation['run_id']}").json()
