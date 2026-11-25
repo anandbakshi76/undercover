@@ -202,9 +202,9 @@ The brief's notes come from the `week2day4-end` branch. In this build:
 - [x] vitest: a waiting change shows as a diff with the model and effort before and after; Approve and Reject each open the dialog first; a rejection sends its reason; a recipe shows as a diff
 - [x] vitest: Start and Stop need a confirmation; a handler who can't sign off over the limit sees what they can't do and why, and the backend's refusal shows if it comes
 - [x] vitest: the rounds list shows each round's recipe version, settings, version tried, reason, scores before and after, verdict, approvals and cost; the chart plots one point for each version tried; the diff view works for a version and a recipe
-- [x] e2e: a handler signs in, a round played out through the API (a proposal made, approved through the dialog, a verdict) shows its stages, the diff, the verdict and the cost on the page, and a second handler without the right sees the explanation and no buttons
-- [x] Playwright MCP, against the stand-ins: the page in each state (waiting for approval, evaluating, finished, stopped, empty) in light and dark mode, with no horizontal scroll at laptop width
-- [x] `npm run check` passes with `.env` moved out of the way
+- [ ] e2e: a handler signs in, a round played out through the API (a proposal made, approved through the dialog, a verdict) shows its stages, the diff, the verdict and the cost on the page, and a second handler without the right sees the explanation and no buttons (not done yet: left for Phase 7)
+- [ ] Playwright MCP, against the stand-ins: the page in each state (waiting for approval, evaluating, finished, stopped, empty) in light and dark mode, with no horizontal scroll at laptop width (not done yet: left for Phase 7)
+- [ ] `npm run check` passes with `.env` moved out of the way (not done yet: left for Phase 7)
 
 ## Phase 6: The look of the whole dashboard
 
