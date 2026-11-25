@@ -253,6 +253,81 @@ export interface ConfigDiff extends Omit<
   reasoning_effort: Change<string>;
 }
 
+export type RoundStage =
+  | "first_evaluations"
+  | "improver_working"
+  | "change_waiting"
+  | "evaluating"
+  | "verdict"
+  | "recipe_waiting"
+  | "finished"
+  | "stopped";
+
+export interface RoundScores {
+  decision_accuracy: number;
+  accuracy: number;
+  grade: number | null;
+  cost_per_claim: number;
+  seconds_per_claim: number;
+  runs: number;
+}
+
+export interface Proposal {
+  id: number;
+  kind: "change" | "recipe";
+  reason: string;
+  status: "pending" | "approved" | "rejected" | "withdrawn";
+  created_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  rejection_reason: string | null;
+  model?: Change<string>;
+  reasoning_effort?: Change<string>;
+  diff: DiffLine[];
+}
+
+export interface Round {
+  round_id: string;
+  status: "working" | "waiting" | "finished" | "stopped";
+  stage: RoundStage;
+  progress: number;
+  recipe_version: number;
+  start_version: number;
+  version_tried: number | null;
+  reason: string | null;
+  before: RoundScores | null;
+  after: RoundScores | null;
+  verdict: "kept" | "rolled_back" | null;
+  why: string | null;
+  started_by: string | null;
+  started_at: string;
+  finished_at: string | null;
+  spent: number;
+  limit: number;
+  proposals: Proposal[];
+  pending: Proposal | null;
+}
+
+export interface RecipeVersion {
+  version: number;
+  reason: string;
+  proposed_by: string;
+  approved_by: string;
+  approved_at: string;
+  round_id: string | null;
+  is_current: boolean;
+}
+
+export interface RecipeDiff {
+  version: number;
+  previous: number | null;
+  reason: string;
+  proposed_by: string;
+  approved_by: string;
+  approved_at: string;
+  lines: DiffLine[];
+}
+
 export interface Handler {
   handler_id: string;
   name: string;
@@ -321,6 +396,16 @@ export const api = {
     request<CurrentConfiguration>("/api/configurations/current"),
   configurationDiff: (version: number) =>
     request<ConfigDiff>(`/api/configurations/${String(version)}/diff`),
+  rounds: () => request<Round[]>("/api/rounds"),
+  startRound: () => post<Round>("/api/rounds"),
+  stopRound: (roundId: string) => post<Round>(`/api/rounds/${roundId}/stop`),
+  approveProposal: (id: number) =>
+    post<Round>(`/api/proposals/${String(id)}/approve`),
+  rejectProposal: (id: number, reason: string) =>
+    post<Round>(`/api/proposals/${String(id)}/reject`, { reason }),
+  recipes: () => request<RecipeVersion[]>("/api/recipes"),
+  recipeDiff: (version: number) =>
+    request<RecipeDiff>(`/api/recipes/${String(version)}/diff`),
   latestDispatch: () => request<Run | null>("/api/dispatches/latest"),
   me: () => request<Handler>("/api/me"),
   handlers: () => request<Handler[]>("/api/handlers"),

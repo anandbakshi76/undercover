@@ -16,6 +16,9 @@ import type {
   Run,
   RunClaim,
   Step,
+  Proposal,
+  RecipeVersion,
+  Round,
 } from "./api";
 
 export class Failure {
@@ -345,3 +348,60 @@ export function settingChange(
     ...overrides,
   };
 }
+
+export function round(overrides: Partial<Round> = {}): Round {
+  return {
+    round_id: "ROUND-1",
+    status: "working",
+    stage: "improver_working",
+    progress: 0,
+    recipe_version: 1,
+    start_version: 1,
+    version_tried: null,
+    reason: null,
+    before: null,
+    after: null,
+    verdict: null,
+    why: null,
+    started_by: "Dana Whitfield",
+    started_at: "2026-11-25T10:00:00+00:00",
+    finished_at: null,
+    spent: 0.1,
+    limit: 0.5,
+    proposals: [],
+    pending: null,
+    ...overrides,
+  };
+}
+
+export function proposal(overrides: Partial<Proposal> = {}): Proposal {
+  return {
+    id: 1,
+    kind: "change",
+    reason: "Shorter answers are cheaper.",
+    status: "pending",
+    created_at: "2026-11-25T10:05:00+00:00",
+    decided_by: null,
+    decided_at: null,
+    rejection_reason: null,
+    model: { before: "openai/gpt-6-luna", after: "openai/gpt-6-luna" },
+    reasoning_effort: { before: "low", after: "medium" },
+    diff: [
+      { kind: "removed", text: "Be thorough." },
+      { kind: "added", text: "Be brief." },
+    ],
+    ...overrides,
+  };
+}
+
+export const RECIPES: RecipeVersion[] = [
+  {
+    version: 1,
+    reason: "The lab's first recipe.",
+    proposed_by: "UnderCover",
+    approved_by: "UnderCover",
+    approved_at: "2026-11-25T10:00:00+00:00",
+    round_id: null,
+    is_current: true,
+  },
+];

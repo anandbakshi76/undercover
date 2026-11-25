@@ -62,6 +62,7 @@ export type Route =
   | { page: "queue" }
   | { page: "claim"; claimId: string }
   | { page: "configuration" }
+  | { page: "improvement" }
   | { page: "settings" }
   | { page: "scoreboard" }
   | { page: "evaluation"; runId: string };
@@ -72,6 +73,7 @@ export function parseRoute(hash: string): Route {
   const evaluation = /^#\/evaluations\/([\w-]+)$/.exec(hash);
   if (evaluation?.[1]) return { page: "evaluation", runId: evaluation[1] };
   if (hash === "#/configuration") return { page: "configuration" };
+  if (hash === "#/improvement") return { page: "improvement" };
   if (hash === "#/settings") return { page: "settings" };
   if (hash === "#/scoreboard") return { page: "scoreboard" };
   return { page: "queue" };

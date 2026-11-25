@@ -839,3 +839,87 @@ button.secondary[aria-pressed="true"] {
   align-items: center;
   margin-bottom: 4px;
 }
+
+.stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+
+.stage {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--subtle);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.stage-done {
+  background: var(--sea-green);
+  color: var(--midnight);
+}
+
+.stage-now {
+  background: var(--marigold);
+  color: var(--midnight);
+  font-weight: 600;
+}
+
+.chart {
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+}
+
+.chart-grid {
+  stroke: var(--subtle);
+  stroke-width: 1;
+}
+
+.chart-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+
+.chart-accuracy {
+  stroke: var(--cerulean);
+  stroke-width: 2.5;
+}
+
+.chart-grade {
+  stroke: var(--raspberry);
+  stroke-width: 2.5;
+  stroke-dasharray: 6 4;
+}
+
+.swatch {
+  display: inline-block;
+  width: 14px;
+  height: 4px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+.swatch-accuracy {
+  background: var(--cerulean);
+}
+
+.swatch-grade {
+  background: var(--raspberry);
+}
+
+.dialog textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--muted);
+  border-radius: 4px;
+  padding: 8px;
+}

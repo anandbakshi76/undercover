@@ -2,6 +2,7 @@ import { useAuth } from "./authContext";
 import { ClaimPage } from "./ClaimPage";
 import { Configuration } from "./Configuration";
 import { EvaluationPage } from "./EvaluationPage";
+import { Improvement } from "./Improvement";
 import { type Route, useRoute, useTheme } from "./hooks";
 import { Queue } from "./Queue";
 import { Scoreboard } from "./Scoreboard";
@@ -16,6 +17,8 @@ function Page({ route }: Readonly<{ route: Route }>) {
       return <EvaluationPage key={route.runId} runId={route.runId} />;
     case "configuration":
       return <Configuration />;
+    case "improvement":
+      return <Improvement />;
     case "settings":
       return <Settings />;
     case "scoreboard":
@@ -60,6 +63,12 @@ export function App() {
             aria-current={route.page === "configuration" ? "page" : undefined}
           >
             Configuration
+          </a>
+          <a
+            href="#/improvement"
+            aria-current={route.page === "improvement" ? "page" : undefined}
+          >
+            Improvement
           </a>
           <a
             href="#/settings"
